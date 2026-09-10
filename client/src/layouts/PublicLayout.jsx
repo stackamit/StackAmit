@@ -78,8 +78,8 @@ const Navbar = () => {
 const Footer = () => {
   const { settings } = useSiteSettings();
   const companyName = settings.companyName || 'StackAmit';
-  const footerEmail = settings.contactEmail || settings.companyEmail || 'info@stackamit.com';
-  const footerPhone = settings.contactPhone || settings.companyPhone || '+1 (555) 123-4567';
+  const footerEmail = settings.contactEmail || settings.companyEmail || 'info.stackamit@gmail.com';
+  const footerPhone = settings.contactPhone || settings.companyPhone || '+91 9031580441';
 
   return (
   <footer className="bg-dark-900 text-dark-300">
