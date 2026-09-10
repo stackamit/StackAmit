@@ -1,0 +1,851 @@
+================================================================================
+              PRODUCT REQUIREMENTS DOCUMENT (PRD)
+              StackAmit | Internship Management System
+================================================================================
+
+Document Version : 1.0
+Date             : August 2026
+Status           : Active
+Project Name     : StackAmit (formerly Skill-Portal)
+Tagline          : AI-Powered Learning Management
+
+================================================================================
+1. EXECUTIVE SUMMARY
+================================================================================
+
+StackAmit is a comprehensive, full-stack Internship Management System designed
+to bridge the gap between academic learning and industry demands. It provides a
+professional SaaS platform for managing internships, trainers, students, tasks,
+certificates, and real-time communication — all under one unified system.
+
+The platform serves three distinct user roles — Admin, Trainer, and Student —
+each with tailored dashboards, workflows, and permissions. It features real-time
+messaging via Socket.io, email notifications via SendGrid, cloud file storage
+via Cloudinary, PDF certificate generation with QR verification, and a dynamic
+public-facing website.
+
+================================================================================
+2. PROJECT OVERVIEW
+================================================================================
+
+2.1 Problem Statement
+---------------------
+- Students lack structured, industry-relevant internship programs with proper
+  mentorship and certification.
+- Trainers and institutions struggle to manage internship assignments, task
+  tracking, and student progress at scale.
+- Employers have no reliable way to verify internship certificates.
+- No unified platform exists that combines internship management, communication,
+  task workflows, and certificate verification.
+
+2.2 Solution
+------------
+StackAmit provides an end-to-end internship lifecycle management platform:
+- Admins create and manage internship programs, onboard trainers, and oversee
+  the entire system.
+- Trainers mentor students, assign and review tasks, and issue certificates.
+- Students browse internships, apply, complete tasks, communicate with trainers,
+  and earn verifiable certificates.
+- Employers and institutions can verify certificates via URL or QR code scan.
+
+2.3 Target Audience
+-------------------
+- Educational institutions offering internship programs
+- Training organizations and bootcamps
+- Students seeking industry experience and certifications
+- Employers verifying candidate credentials
+
+================================================================================
+3. TECHNOLOGY STACK
+================================================================================
+
+3.1 Frontend
+
+- Framework      : React 18 (Functional Components + Hooks)
+- Build Tool     : Vite 6
+- Routing        : React Router DOM 7
+- State Mgmt     : Redux Toolkit (UI state), React Context (auth, socket)
+- Data Fetching  : Axios + React Query (TanStack Query)
+- Styling        : Tailwind CSS 3 + Custom CSS
+- Animations     : Framer Motion
+- Icons          : React Icons (Feather Icons)
+- Real-time      : Socket.io Client 4
+- Forms          : React Hook Form
+- Charts         : Recharts
+- QR Code        : qrcode.react, html5-qrcode (scanner)
+- Notifications  : react-hot-toast
+- Emoji Picker   : emoji-picker-react
+
+3.2 Backend
+- Charts         : Recharts
+- Runtime        : Node.js (ES Modules)
+- Framework      : Express.js 4
+- Database       : MongoDB Atlas (Mongoose 8 ODM)
+- Authentication : JWT (Access + Refresh Tokens), bcryptjs
+- Validation     : express-validator
+- Real-time      : Socket.io 4
+- File Upload    : Multer + Cloudinary
+- Email          : SendGrid (@sendgrid/mail)
+- PDF Generation : PDFKit
+- QR Code        : qrcode
+- Security       : Helmet, CORS, express-rate-limit, cookie-parser
+- Logging        : Morgan
+- Excel Export   : ExcelJS
+- Unique IDs     : UUID
+
+3.3 Infrastructure
+------------------
+- Database       : MongoDB Atlas (Replica Set with SSL)
+- File Storage   : Cloudinary (images, documents, certificates)
+- Email Service  : SendGrid
+- Development    : Nodemon (auto-restart)
+
+================================================================================
+4. USER ROLES & PERMISSIONS
+================================================================================
+
+4.1 Admin
+- Create and manage trainer accounts (with welcome email)
+- Full system access and control
+- Create, update, close, archive, and delete internships
+- Create and manage trainer accounts (with welcome email)
+- Assign students to trainers (with optional internship mapping)
+- View and manage all student applications (approve/reject)
+- Monitor all conversations and discussions
+- Manage certificates (issue, revoke)
+- Configure system settings (company info, email, security, certificates)
+- View dashboard analytics and reports
+- Export data to Excel
+- Receive notifications for all system activities
+
+4.2 Trainer
+
+- View assigned students only (scope-limited visibility)
+- Create, assign, and manage tasks for assigned students
+- Review and grade task submissions (approve/reject/request resubmission)
+- Communicate with assigned students via real-time chat
+- Issue certificates for completed internships
+- View dashboard with student progress and task statistics
+- Toggle active/inactive status
+- Receive notifications for task submissions and system events
+
+4.3 Student
+- Receive notifications for task assignments, application updates, certificates
+- Register with email OTP verification
+- Browse and apply for published internships
+- Track application status (pending/approved/rejected/withdrawn)
+- View assigned trainer and internship details
+- Complete and submit tasks (file upload, GitHub link, live URL, video demo)
+- Communicate with assigned trainer via real-time chat
+- Download and share earned certificates
+- Manage profile (personal info, education, skills, social links, resume)
+- Receive notifications for task assignments, application updates, certificates
+
+4.4 Public (Unauthenticated)
+-----------------------------
+- Browse homepage with dynamic content
+- View available internships with category filtering
+- Read about the platform
+- Contact the organization
+- Verify certificates by certificate number or QR scan
+- View certificate details page
+
+================================================================================
+5. CORE FEATURES & MODULES
+================================================================================
+
+5.1 Authentication & Authorization
+-----------------------------------
+- Student registration with email OTP verification
+- Admin-created trainer accounts with welcome email and temporary password
+- JWT-based authentication with access token (15min) and refresh token (7 days)
+- Role-based access control (Admin / Trainer / Student)
+- Password reset via email OTP
+- Force password change on first login (for admin-created accounts)
+- Secure HTTP-only cookies for refresh tokens
+- Token auto-refresh via Axios interceptor
+
+5.2 Internship Management
+--------------------------
+- Admin creates internships with full details:
+  - Title, description, category, duration (weeks + hours/week)
+  - Eligibility criteria, requirements, skills, responsibilities
+  - Learning outcomes, total seats, application deadline
+  - Start date, end date
+- Internship statuses: Published, Closed, Archived
+- Public browsing with category-based filtering
+- Student application with one-application-per-internship constraint
+- Admin/Trainer application review (approve/reject with notes)
+- Student can withdraw applications
+- Seat management (total vs. filled count)
+
+5.3 Task & Submission Workflow
+-------------------------------
+- Trainers create tasks with:
+  - Title, description, priority (low/medium/high), due date
+  - Attachments, instructions, total marks
+- Students submit tasks with:
+  - File attachments, GitHub repository link
+  - Live deployment URL, documentation, video demo link
+  - Remarks/notes
+- Trainers review submissions:
+  - Approve / Reject / Request Resubmission
+  - Award marks, add remarks
+- Task statuses: pending, in_progress, submitted, approved, rejected, resubmission_requested
+- Email notifications for task assignments and submission reviews
+
+5.4 Certificate System
+-----------------------
+- Unique certificate number generation (UUID-based)
+- QR code generation for each certificate
+- PDF certificate generation via PDFKit with professional template
+- Certificate types: Completion, Excellence, Participation
+- Certificate fields: student name, internship title, duration, issue date, issuer
+- Public verification via:
+  - Certificate number lookup
+  - QR code scan (mobile camera)
+  - Direct URL sharing
+- Certificate revocation with reason tracking
+- Social sharing (WhatsApp, Twitter, LinkedIn, Facebook)
+- Email notification on certificate issuance
+
+5.5 Real-Time Communication (Discussion System)
+-------------------------------------------------
+- Internship-scoped conversations (tied to internship + trainer + student)
+- Conversation types: Private, Group, Announcement
+- Message types: Text, Image, PDF, Document, Video, Audio, ZIP, Code, Announcement, System
+- Features:
+  - Reply to messages (thread support)
+  - Pin important messages
+  - Mark messages as important
+  - Edit and delete messages
+  - Typing indicators
+  - Online/offline status
+  - Read receipts
+  - Unread count tracking
+  - Message search
+- Admin can monitor all conversations
+- WhatsApp-style sender identification with role-colored badges
+
+5.6 Notification System
+------------------------
+- Dynamic notification types:
+  - Task assigned, task reminder, task completed
+  - Application status (approved/rejected)
+  - Certificate issued
+  - Internship updates (created/updated/closed/deleted)
+  - Trainer updates (added/activated/suspended/removed)
+  - Submission reviewed
+  - General system notifications
+- Real-time delivery via Socket.io
+- Read/unread status tracking
+- Unread count badge in header
+- Admin receives notifications for all system activities
+- excludeUserId pattern to prevent self-notification
+
+5.7 Student Profile Management
+-------------------------------
+- Personal info: first name, last name, gender, date of birth
+- Education: college/university, course, branch, year
+- Contact: phone, address
+- Social links: LinkedIn, GitHub
+- Skills (multi-value)
+- Resume upload (PDF)
+- Avatar upload
+- Profile completion percentage tracker
+- Current internship and assigned trainer references
+
+5.8 Trainer Management
+-----------------------
+- Admin creates trainer accounts with:
+  - Name, email, temporary password
+  - Bio, expertise areas (multi-value)
+  - Max student capacity
+- Welcome email sent on creation
+- Student assignment (single or bulk) with optional internship mapping
+- Assignment tracking: active, completed, transferred, removed
+- Progress percentage per assignment
+- Trainer performance metrics: rating, total internships, total tasks, avg student rating
+- Activate/suspend trainer accounts
+
+5.9 Dashboard & Analytics
+--------------------------
+- Admin Dashboard:
+  - Total students, trainers, internships, applications
+  - Application status breakdown
+  - Recent activity feed
+  - Quick action cards (navigable)
+  - Color-coded statistics
+- Trainer Dashboard:
+  - Assigned students count
+  - Pending task submissions
+  - Task completion statistics
+  - Recent student activity
+- Student Dashboard:
+  - Current internship status
+  - Pending tasks
+  - Application status
+  - Earned certificates
+- Report export to Excel (admin)
+
+5.10 System Settings (Dynamic Content)
+---------------------------------------
+- Company settings: name, logo, tagline, description
+- Contact info: email, phone, address
+- Social media links
+- Email configuration
+- Certificate settings (secret key, template)
+- Website content:
+  - Hero section (badge, title, subtitle, stats)
+  - Why Choose Us section
+  - CTA section
+  - About page content (title, subtitle, mission, vision)
+- Security settings
+- Public vs. confidential setting categories
+- Bulk update support
+
+5.11 Activity Logging & Audit Trail
+-------------------------------------
+- All system actions logged with:
+  - User who performed the action
+  - Action type
+  - Entity type and ID
+  - Details/metadata
+  - IP address
+  - User agent
+- Recent activity feed on dashboards
+
+5.12 File Upload System
+------------------------
+- Cloudinary integration for all file uploads
+- Supported types: images, documents, PDFs, resumes
+- Multer middleware for upload handling
+- Type filtering and size limits
+- Generic upload endpoint for flexibility
+
+================================================================================
+6. DATABASE MODELS
+================================================================================
+
+6.1 User (Base Model with Discriminators)
+------------------------------------------
+- name, email, password (hashed), role (admin/trainer/student)
+- avatar, phone, isEmailVerified, mustChangePassword, isActive
+- refreshToken
+- Discriminator key: 'role'
+
+6.2 Admin (discriminator of User)
+----------------------------------
+- Inherits all User fields, no additional fields
+
+6.3 Student (discriminator of User)
+------------------------------------
+- firstName, lastName, gender, dateOfBirth
+- collegeName, universityName, course, branch, year
+- address, linkedIn, github
+- resume (Cloudinary URL)
+- skills [String]
+- profileCompletion (percentage)
+- currentInternship (ref: Internship)
+- assignedTrainer (ref: Trainer)
+
+6.4 Trainer (discriminator of User)
+------------------------------------
+- bio, expertise [String]
+- rating, assignedStudents [ref: Student]
+- maxStudents, totalInternships, totalTasks
+- averageStudentRating
+
+6.5 Internship
+--------------
+- title, description, category
+- durationWeeks, hoursPerWeek
+- eligibility, requirements [String], skills [String]
+- responsibilities [String], learningOutcomes [String]
+- certificateType, totalSeats, filledSeats
+- deadline, startDate, endDate
+- status (published/closed/archived)
+- createdBy (ref: User)
+- isDeleted (soft delete)
+
+6.6 Application
+---------------
+- studentId (ref: Student), internshipId (ref: Internship)
+- status (pending/approved/rejected/withdrawn)
+- appliedDate, reviewedBy (ref: User), reviewedAt, reviewNotes
+- Compound unique index: studentId + internshipId
+
+6.7 Task
+  - Attachments, instructions, total marks
+- title, description, priority (low/medium/high)
+- assignedBy (ref: User), assignedTo (ref: Student)
+- internshipId (ref: Internship)
+- dueDate, attachments [Object], instructions
+- status, totalMarks, obtainedMarks, remarks
+- completedAt
+
+6.8 Submission
+--------------
+- taskId (ref: Task), studentId (ref: Student)
+- files [Object], githubLink, liveUrl, documentation, videoDemo
+- remarks, status (submitted/approved/rejected/resubmission_requested)
+- reviewedBy (ref: User), reviewedAt, reviewerRemarks, marks
+
+6.9 Certificate
+---------------
+- studentId (ref: Student), internshipId (ref: Internship)
+- certificateNumber (unique), verificationId (UUID)
+- qrCodeData, pdfUrl, issuedDate
+- issuedBy (ref: User)
+- studentName, internshipTitle, duration
+- isRevoked, revokeReason, revokedAt, revokedBy
+
+6.10 Notification
+-----------------
+- userId (ref: User), title, message
+- type (task_assigned, certificate_issued, application_status, etc.)
+- isRead, readAt
+- relatedEntity (task/internship/application/certificate/submission/user/message)
+- relatedId, actionUrl
+
+6.11 Message
+- Internship-scoped conversations (tied to internship + trainer + student)
+- conversationId (ref: Conversation)
+- sender (ref: User), senderRole
+- content, messageType (TEXT/IMAGE/PDF/DOCUMENT/VIDEO/AUDIO/ZIP/CODE/ANNOUNCEMENT/SYSTEM)
+- attachments [Object]
+- replyTo (ref: Message), isPinned, isImportant
+- editedAt, deletedAt, deletedBy
+- readBy [ref: User]
+
+6.12 Conversation
+-----------------
+- internshipId (ref: Internship)
+- trainer (ref: Trainer), student (ref: Student)
+- participants [ref: User]
+- type (private/group/announcement)
+- lastMessage (ref: Message)
+- unreadCountTrainer, unreadCountStudent
+- isClosed, mutedBy [ref: User]
+
+6.13 OTP
+- Admin receives notifications for all system activities
+- userId (ref: User), email, otp
+- purpose (registration/password_reset/email_verification)
+- expiresAt, isUsed
+
+6.14 ActivityLog
+----------------
+- userId (ref: User), action, entityType, entityId
+- details [Object], ipAddress, userAgent
+
+6.15 Setting
+- Personal info: first name, last name, gender, date of birth
+- key (unique), value, category
+- isPublic (boolean)
+
+6.16 Assignment
+---------------
+- trainerId (ref: Trainer), studentId (ref: Student)
+- internshipId (ref: Internship)
+- assignedDate, status (active/completed/transferred/removed)
+- progressPercentage, notes
+
+================================================================================
+7. API ENDPOINTS SUMMARY
+================================================================================
+
+7.1 Authentication (/api/auth)
+-------------------------------
+POST   /register          - Student registration
+POST   /verify-otp        - OTP verification
+POST   /login             - User login
+POST   /logout            - User logout
+POST   /refresh-token     - Refresh access token
+POST   /forgot-password   - Request password reset
+POST   /reset-password    - Reset password with OTP
+POST   /change-password   - Change password (authenticated)
+
+7.2 Internships (/api/internships)
+-----------------------------------
+GET    /                  - List internships (public, paginated, filtered)
+GET    /:id               - Get internship details
+POST   /                  - Create internship (admin)
+PUT    /:id               - Update internship (admin)
+PUT    /:id/close         - Close internship (admin)
+DELETE /:id               - Delete internship (admin)
+
+7.3 Applications (/api/applications)
+-------------------------------------
+POST   /                  - Apply for internship (student)
+GET    /                  - List applications (role-scoped)
+PUT    /:id/approve       - Approve application (admin/trainer)
+PUT    /:id/reject        - Reject application (admin/trainer)
+PUT    /:id/withdraw      - Withdraw application (student)
+
+7.4 Tasks (/api/tasks)
+-----------------------
+POST   /                  - Create task (trainer)
+GET    /                  - List tasks (role-scoped)
+GET    /:id               - Get task details
+PUT    /:id               - Update task (trainer)
+DELETE /:id               - Delete task (trainer)
+POST   /:id/submit        - Submit task (student)
+PUT    /:id/review        - Review submission (trainer)
+
+7.5 Certificates (/api/certificates)
+-------------------------------------
+POST   /                  - Generate certificate (trainer/admin)
+GET    /                  - List certificates (role-scoped)
+GET    /:id               - Get certificate details
+GET    /verify/:number    - Verify certificate (public)
+GET    /:id/pdf           - Download PDF certificate
+GET    /:id/qr            - Get QR code image
+PUT    /:id/revoke        - Revoke certificate (admin)
+
+7.6 Discussion/Messaging (/api/discussions)
+--------------------------------------------
+POST   /conversations     - Create conversation
+GET    /conversations     - List conversations (role-scoped)
+GET    /conversations/:id - Get conversation details
+POST   /conversations/:id/messages - Send message
+GET    /conversations/:id/messages - Get messages (paginated)
+PUT    /messages/:id      - Edit message
+DELETE /messages/:id      - Delete message
+PUT    /messages/:id/pin  - Pin/unpin message
+PUT    /messages/:id/read - Mark messages as read
+
+7.7 Trainers (/api/trainers)
+------------------------------
+POST   /                  - Create trainer (admin)
+GET    /                  - List trainers
+GET    /:id               - Get trainer details
+PUT    /:id               - Update trainer (admin)
+PUT    /:id/toggle-status - Activate/suspend trainer (admin)
+PUT    /:id/assign        - Assign students to trainer (admin)
+DELETE /:id               - Delete trainer (admin)
+
+7.8 Students (/api/students)
+------------------------------
+GET    /profile           - Get own profile
+PUT    /profile           - Update profile
+POST   /avatar            - Upload avatar
+POST   /resume            - Upload resume
+GET    /                  - List students (admin)
+GET    /:id               - Get student details (admin)
+PUT    /:id               - Update student (admin)
+DELETE /:id               - Delete student (admin)
+
+7.9 Notifications (/api/notifications)
+---------------------------------------
+GET    /                  - List notifications (paginated)
+GET    /unread-count      - Get unread count
+PUT    /:id/read          - Mark as read
+PUT    /read-all          - Mark all as read
+
+7.10 Reports (/api/reports)
+-----------------------------
+GET    /admin/dashboard   - Admin dashboard statistics
+GET    /trainer/dashboard - Trainer dashboard statistics
+GET    /student/dashboard - Student dashboard statistics
+GET    /export            - Export data to Excel (admin)
+
+7.11 Settings (/api/settings)
+-------------------------------
+GET    /                  - Get all settings (public + private based on role)
+PUT    /                  - Update settings (admin)
+PUT    /bulk              - Bulk update settings (admin)
+
+7.12 Upload (/api/upload)
+---------------------------
+POST   /image             - Upload image
+POST   /document          - Upload document
+POST   /multiple          - Upload multiple files
+
+================================================================================
+8. REAL-TIME FEATURES (Socket.io)
+================================================================================
+
+8.1 Connection & Authentication
+--------------------------------
+- JWT-based Socket.io authentication middleware
+- Automatic reconnection on disconnect
+- User online/offline status tracking
+
+8.2 Events
+GET    /:id/qr            - Get QR code image
+Client -> Server:
+- joinConversation      - Join a conversation room
+- leaveConversation     - Leave a conversation room
+- sendMessage           - Send a real-time message
+- typing:start          - Start typing indicator
+- typing:stop           - Stop typing indicator
+- editMessage           - Edit a message
+- deleteMessage         - Delete a message
+- pinMessage            - Pin/unpin a message
+- markMessagesRead      - Mark messages as read
+
+Server -> Client:
+- messageReceived       - New message delivered
+- messageEdited         - Message edited notification
+- messageDeleted        - Message deleted notification
+- messagePinned         - Message pinned notification
+- typingIndicator       - Typing status update
+- userOnline            - User came online
+- userOffline           - User went offline
+- unreadCountUpdate     - Unread count changed
+- notificationReceived  - New notification pushed
+
+================================================================================
+9. SECURITY MEASURES
+================================================================================
+
+9.1 Authentication & Authorization
+-----------------------------------
+- JWT access tokens (15-minute expiry)
+- JWT refresh tokens (7-day expiry, HTTP-only secure cookies)
+- bcryptjs password hashing (12 salt rounds)
+- Role-based access control middleware
+- Password change enforcement for admin-created accounts
+- Email verification via OTP for student registration
+
+9.2 Data Protection
+--------------------
+- Helmet.js for HTTP security headers
+- CORS configuration with allowed origins
+- express-rate-limit for API throttling
+- Input validation via express-validator
+- MongoDB injection prevention via Mongoose
+- XSS protection via input sanitization
+
+9.3 File Upload Security
+--------------------------
+- Multer type filtering (whitelist allowed MIME types)
+- File size limits
+- Cloudinary server-side upload (no direct client uploads)
+
+9.4 Session Management
+-----------------------
+- Refresh token rotation
+- Token blacklist on logout
+- Secure cookie flags (httpOnly, secure, sameSite)
+
+9.5 Audit & Monitoring
+-----------------------
+- Activity logging for all system actions
+- IP address and user agent tracking
+- Error logging with Morgan
+
+================================================================================
+10. EMAIL NOTIFICATIONS
+================================================================================
+
+10.1 Email Types
+-----------------
+- Welcome email (new trainer account creation)
+- OTP verification email (registration)
+- Password reset OTP email
+- Task assignment notification
+- Task submission review notification
+- Certificate issuance notification
+
+10.2 Email Configuration
+--------------------------
+- SendGrid API integration
+- Configurable sender name and email
+- HTML email templates
+- Dynamic content injection
+
+================================================================================
+11. UI/UX DESIGN PRINCIPLES
+================================================================================
+
+11.1 Design System
+-------------------
+- Color Palette: Primary (blue gradient), Dark mode support
+- Typography: Inter (body), Poppins (display/headings)
+- Spacing: Consistent Tailwind spacing scale
+- Border Radius: Rounded corners throughout
+- Shadows: Subtle elevation for cards and modals
+
+11.2 Responsive Design
+-----------------------
+- Mobile-first approach
+- Breakpoints: sm (640px), md (768px), lg (1024px), xl (1280px)
+- Collapsible sidebar on mobile
+- Mobile navigation menu
+- Responsive tables and grids
+
+11.3 Dark Mode
+---------------
+- Full dark mode support across all pages
+- Toggle in header/navbar
+- Persisted in Redux state
+- Tailwind dark: variant throughout
+
+11.4 Component Patterns
+------------------------
+- Card-based layouts for dashboards
+- Modal dialogs for forms and confirmations
+- Toast notifications for user feedback
+- Loading skeletons and spinners
+- Empty state illustrations
+- Error boundary handling
+
+================================================================================
+12. DEPLOYMENT & ENVIRONMENT
+================================================================================
+
+12.1 Environment Variables
+----------------------------
+Server:
+- PORT, NODE_ENV
+- MONGODB_URI (MongoDB Atlas connection string)
+- JWT_SECRET, JWT_EXPIRE, JWT_REFRESH_SECRET, JWT_REFRESH_EXPIRE
+- ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD
+- SENDGRID_API_KEY, EMAIL_FROM
+- CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+- CLIENT_URL (frontend origin)
+- CERTIFICATE_SECRET, BCRYPT_SALT, COOKIE_SECRET
+
+Client:
+- VITE_API_URL (backend API base URL)
+- VITE_APP_NAME (application display name)
+
+12.2 Development Setup
+-----------------------
+- Backend: Port 5000 (nodemon auto-restart)
+- Frontend: Port 5173 (Vite HMR)
+- Database: MongoDB Atlas (cloud-hosted)
+- Admin seeding: npm run seed (server)
+
+12.3 Build & Production
+------------------------
+- Frontend: vite build (optimized production bundle)
+- Backend: node server.js (production mode)
+- Chunk size optimization for large bundles
+
+================================================================================
+13. PROJECT STRUCTURE
+================================================================================
+
+13.1 Server Directory
+----------------------
+server/
+├── config/           # Database connection, admin seeding
+── controllers/      # Business logic handlers
+├── middleware/       # Auth, validation, error handling, upload
+├── models/           # Mongoose schemas and discriminators
+── routes/           # Express route definitions
+── services/         # Email, cloudinary, notifications, activity log
+├── socket/           # Socket.io event handlers
+├── utils/            # Helper utilities
+├── .env              # Environment variables
+├── server.js         # Application entry point
+└── package.json      # Server dependencies
+
+13.2 Client Directory
+----------------------
+client/
+├── public/           # Static assets (logo, favicon)
+├── src/
+│   ├── components/   # Reusable UI components (ChatPanel, etc.)
+│   ├── context/      # React contexts (Auth, Socket)
+│   ├── hooks/        # Custom hooks (useAuth, useNotifications, etc.)
+│   ├── layouts/      # Page layouts (Admin, Student, Trainer, Public, Auth)
+│   ├── pages/        # Page components organized by role
+│   │   ├── admin/    # Admin dashboard pages
+│   │   ├── auth/     # Authentication pages
+│   │   ├── public/   # Public-facing pages
+│   │   ├── shared/   # Shared pages (notifications)
+│   │   ├── student/  # Student dashboard pages
+│   │   └── trainer/  # Trainer dashboard pages
+│   ├── redux/        # Redux store and slices
+│   ├── services/     # API client (Axios instance)
+│   ├── App.jsx       # Root app component with routing
+│   └── main.jsx      # Entry point
+├── index.html        # HTML template
+├── vite.config.js    # Vite configuration
+├── tailwind.config.js # Tailwind configuration
+└── package.json      # Client dependencies
+
+================================================================================
+14. FUTURE ENHANCEMENTS (Roadmap)
+================================================================================
+
+Phase 2 - Enhanced Features:
+- Video conferencing integration for mentor sessions
+- AI-powered task suggestions and auto-grading
+- Advanced analytics with predictive insights
+- Multi-language support (i18n)
+- Push notifications (web + mobile)
+- Calendar integration for task deadlines
+- Internship progress timeline visualization
+
+Phase 3 - Scale & Enterprise:
+- Multi-tenant support for multiple organizations
+- White-label customization
+- Mobile application (React Native)
+- Advanced reporting with custom report builder
+- Integration with LinkedIn for profile sync
+- Bulk certificate generation
+- Automated certificate expiry and renewal
+
+================================================================================
+15. ACCEPTANCE CRITERIA
+================================================================================
+
+15.1 Functional Requirements
+------------------------------
+- [ ] Students can register, verify email, and log in
+- [ ] Admins can create internships with all required fields
+- [ ] Students can browse and apply for internships
+- [ ] Admins/Trainers can approve or reject applications
+- [ ] Trainers can create and assign tasks to students
+- [ ] Students can submit tasks with files and links
+- [ ] Trainers can review and grade submissions
+- [ ] Certificates are generated with unique numbers and QR codes
+- [ ] Certificates can be verified publicly via number or QR scan
+- [ ] Real-time chat works between trainers and assigned students
+- [ ] Notifications are delivered in real-time
+- [ ] Admin receives notifications for all system activities
+- [ ] System settings are dynamically configurable
+- [ ] All pages are responsive and support dark mode
+
+15.2 Non-Functional Requirements
+----------------------------------
+- [ ] API response time < 500ms for standard operations
+- [ ] Real-time message delivery < 1 second
+- [ ] Support 1000+ concurrent users
+- [ ] 99.9% uptime for production deployment
+- [ ] All passwords hashed with bcrypt (12 rounds)
+- [ ] JWT tokens expire appropriately (15min access, 7-day refresh)
+- [ ] File uploads limited by type and size
+- [ ] Database queries optimized with proper indexes
+- [ ] Frontend bundle optimized for production
+
+================================================================================
+16. GLOSSARY
+================================================================================
+
+- IMS          : Internship Management System
+- SaaS         : Software as a Service
+- JWT          : JSON Web Token
+- OTP          : One-Time Password
+- QR           : Quick Response (code)
+- UUID         : Universally Unique Identifier
+- MERN         : MongoDB, Express.js, React.js, Node.js
+- HMR          : Hot Module Replacement
+- CRUD         : Create, Read, Update, Delete
+- RBAC         : Role-Based Access Control
+- PDF          : Portable Document Format
+- API          : Application Programming Interface
+- SSL          : Secure Sockets Layer
+- CORS         : Cross-Origin Resource Sharing
+- XSS          : Cross-Site Scripting
+- HTTP-only    : Cookie flag preventing JavaScript access
+- Discriminator: Mongoose feature for model inheritance
+
+================================================================================
+                          END OF DOCUMENT
+================================================================================
