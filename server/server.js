@@ -119,6 +119,14 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/discussions', discussionRoutes);
 app.use('/api/feedback', feedbackRoutes);
+// ─── root route ────
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'StackAmit Server is running 🚀',
+    health: '/api/health',
+  });
+});
 // ─── 404 Handler ───
 app.use((req, res) => {
   res.status(404).json({
