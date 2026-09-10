@@ -45,7 +45,7 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'https://stackamit.netlify.app', 
+    origin: process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',') : 'https://stackamit.netlify.app', 
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
