@@ -15,7 +15,7 @@ const AdminInternships = () => {
   const [form, setForm] = useState({ title: '', description: '', category: 'Web Development', duration: { weeks: 8, hoursPerWeek: 20 }, seats: { total: 10 }, deadline: '', startDate: '', endDate: '', eligibility: '', skills: '' });
   const [saving, setSaving] = useState(false);
 
-  const categories = ['Web Development', 'Mobile Development', 'Data Science', 'Machine Learning', 'UI/UX Design', 'Digital Marketing', 'Cloud Computing', 'Cyber Security', 'DevOps', 'Blockchain', 'Artificial Intelligence', 'Python Programming', 'Java Programming', 'Business Analytics', 'Other'];
+  const categories = ['Web Development', 'Mobile Development', 'Data Science', 'Machine Learning', 'UI/UX Design', 'Digital Marketing', 'Cloud Computing', 'Cyber Security', 'DevOps', 'Blockchain', 'Artificial Intelligence', 'Business Analytics', 'Other'];
 
   const fetchInternships = async (pageNum = 1, limitNum = 20) => {
     setLoading(true);
