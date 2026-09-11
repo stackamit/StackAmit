@@ -1,5 +1,5 @@
 import DashboardLayout from './DashboardLayout';
-import { FiHome, FiUsers, FiCheckSquare, FiAward, FiBell, FiMessageSquare, FiStar } from 'react-icons/fi';
+import { FiHome, FiUsers, FiCheckSquare, FiAward, FiBell, FiMessageSquare, FiStar, FiUser } from 'react-icons/fi';
 
 const sidebarItems = [
   { path: 'overview', label: 'Overview', icon: <FiHome size={18} /> },
@@ -9,6 +9,7 @@ const sidebarItems = [
   { path: 'certificates', label: 'Certificates', icon: <FiAward size={18} /> },
   { path: 'feedback', label: 'Feedback', icon: <FiStar size={18} /> },
   { path: 'notifications', label: 'Notifications', icon: <FiBell size={18} /> },
+  { path: 'profile', label: 'My Profile', icon: <FiUser size={18} /> },
 ];
 
 const TrainerLayout = () => {

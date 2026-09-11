@@ -47,6 +47,7 @@ import TrainerStudents from './pages/trainer/TrainerStudents';
 import TrainerTasks from './pages/trainer/TrainerTasks';
 import TrainerDiscussion from './pages/trainer/TrainerDiscussion';
 import TrainerCertificates from './pages/trainer/TrainerCertificates';
+import TrainerProfile from './pages/trainer/TrainerProfile';
 
 // Student Pages
 import StudentOverview from './pages/student/StudentOverview';
@@ -166,6 +167,7 @@ function App() {
           <Route path="tasks" element={<TrainerTasks />} />
           <Route path="discussions" element={<TrainerDiscussion />} />
           <Route path="certificates" element={<TrainerCertificates />} />
+          <Route path="profile" element={<TrainerProfile />} />
           <Route path="feedback" element={<FeedbackPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
         </Route>
