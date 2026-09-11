@@ -252,11 +252,10 @@ export const sendCertificateEmail = async (to, studentName, internshipTitle, cer
   return sendEmail(msg);
 };
 
-export const sendOfferLetterEmail = async (to, studentName, internshipTitle, category, duration, trainerName) => {
-  const trainerSection = trainerName
-    ? `<p><strong>Assigned Trainer:</strong> ${trainerName}</p>`
-    : '';
+export const sendOfferLetterEmail = async (to, studentName, internshipTitle, category, duration, trainerName, applicationId, pdfBuffer = null, offerDate = null) => {
   const durationText = duration ? `${duration.weeks} weeks (${duration.hoursPerWeek || 20} hrs/week)` : 'As per program schedule';
+  const offerDateText = (offerDate ? new Date(offerDate) : new Date()).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const offerLettersUrl = `${process.env.CLIENT_URL}/student/offer-letters`;
 
   const msg = {
     to,
@@ -281,7 +280,9 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
         .offer-box td:first-child { font-weight: 600; color: #333; width: 160px; }
         .congrats { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 6px; margin: 20px 0; }
         .congrats p { margin: 0; color: #92400e; font-weight: 500; }
-        .btn { display: inline-block; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 10px 0; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 6px 4px 6px 0; }
+        .btn-outline { display: inline-block; background: #fff; color: #11998e; border: 2px solid #11998e; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 6px 4px 6px 0; }
+        .btn-group { margin: 16px 0; }
         .footer { background: #f8f9ff; padding: 20px 30px; text-align: center; color: #888; font-size: 13px; }
         .footer p { margin: 4px 0; }
       </style></head>
@@ -305,15 +306,21 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
                 <tr><td>Category</td><td>${category}</td></tr>
                 <tr><td>Duration</td><td>${durationText}</td></tr>
                 ${trainerName ? `<tr><td>Assigned Trainer</td><td>${trainerName}</td></tr>` : ''}
-                <tr><td>Offer Date</td><td>${new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
+                <tr><td>Offer Date</td><td>${offerDateText}</td></tr>
               </table>
             </div>
 
             <p>As an intern at StackAmit, you will have the opportunity to work on real-world projects, receive mentorship from industry professionals, and earn a certificate upon successful completion of the program.</p>
 
-            <p>Please log in to your student dashboard to view your tasks, connect with your trainer, and track your progress throughout the internship.</p>
+            <p>Your official offer letter in PDF format ${pdfBuffer ? 'is <strong>attached to this email</strong> - simply open or download the attachment' : 'can be downloaded from your student dashboard'}.</p>
 
-            <a href="${process.env.CLIENT_URL}/student/overview" class="btn">Go to Dashboard</a>
+            ${pdfBuffer ? '<p style="background: #f0fff4; border: 1px solid #38ef7d; border-radius: 8px; padding: 12px 16px; color: #11998e; font-weight: 600;">&#128206; Offer-Letter.pdf is attached to this email.</p>' : ''}
+
+            <div class="btn-group">
+              <a href="${offerLettersUrl}" class="btn">View &amp; Download Offer Letters</a>
+            </div>
+
+            <p>Please log in to your student dashboard to view your tasks, connect with your trainer, and track your progress throughout the internship.</p>
 
             <p style="margin-top: 20px;">We look forward to a productive and enriching experience with you!</p>
             <p style="color: #333;"><strong>Best regards,</strong><br>Team StackAmit</p>
@@ -327,5 +334,16 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
       </html>
     `,
   };
+
+  // Attach the offer letter PDF to the email when provided
+  if (pdfBuffer) {
+    msg.attachments = [{
+      content: pdfBuffer.toString('base64'),
+      filename: `Offer-Letter-${(studentName || 'Student').replace(/\s+/g, '-')}.pdf`,
+      type: 'application/pdf',
+      disposition: 'attachment',
+    }];
+  }
+
   return sendEmail(msg);
 };

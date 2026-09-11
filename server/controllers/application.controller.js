@@ -7,6 +7,7 @@ import { createNotification, notifyAdmins } from '../services/notification.servi
 import { sendOfferLetterEmail } from '../services/email.service.js';
 import { getIO } from '../socket/index.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { getOfferLetterApplication, generateOfferLetterPDFBuffer } from '../services/offerLetter.service.js';
 
 // ─── Apply for Internship ────────────────────────────────────────────────────
 export const applyForInternship = asyncHandler(async (req, res) => {
@@ -216,7 +217,7 @@ export const approveApplication = asyncHandler(async (req, res) => {
     type: 'offer_letter',
     relatedEntity: 'application',
     relatedId: application._id,
-    actionUrl: '/student/overview',
+    actionUrl: '/student/offer-letters',
   });
 
   // Emit real-time socket notification to the student
@@ -228,32 +229,41 @@ export const approveApplication = asyncHandler(async (req, res) => {
       type: 'offer_letter',
       relatedEntity: 'application',
       relatedId: application._id,
-      actionUrl: '/student/overview',
+      actionUrl: '/student/offer-letters',
     });
   } catch (socketErr) {
     console.error('Socket emit error (offer letter):', socketErr.message);
   }
 
-  // Send offer letter email (non-blocking - don't fail the request if email fails)
+  // Send offer letter email with the PDF attached (non-blocking - don't fail the request if email fails)
   const studentName = application.studentId?.name || `${application.studentId?.firstName || ''} ${application.studentId?.lastName || ''}`.trim() || 'Student';
   const studentEmail = application.studentId?.email;
   if (studentEmail) {
-    sendOfferLetterEmail(
-      studentEmail,
-      studentName,
-      application.internshipId.title,
-      application.internshipId.category,
-      application.internshipId.duration,
-      trainer?.name || null
-    ).then(result => {
-      if (result?.success) {
-        console.log(`[OfferLetter] Email sent to ${studentEmail} for "${application.internshipId.title}"`);
-      } else {
-        console.warn(`[OfferLetter] Email failed for ${studentEmail}:`, result?.error);
+    (async () => {
+      try {
+        // Re-fetch with full population so the attached PDF contains complete student details
+        const fullApplication = await getOfferLetterApplication(application._id);
+        const pdfBuffer = fullApplication ? await generateOfferLetterPDFBuffer(fullApplication) : null;
+        const result = await sendOfferLetterEmail(
+          studentEmail,
+          studentName,
+          application.internshipId.title,
+          application.internshipId.category,
+          application.internshipId.duration,
+          trainer?.name || null,
+          application._id,
+          pdfBuffer,
+          application.reviewedAt
+        );
+        if (result?.success) {
+          console.log(`[OfferLetter] Email ${pdfBuffer ? 'with PDF attachment ' : ''}sent to ${studentEmail} for "${application.internshipId.title}"`);
+        } else {
+          console.warn(`[OfferLetter] Email failed for ${studentEmail}:`, result?.error);
+        }
+      } catch (err) {
+        console.error('[OfferLetter] Email error:', err.message);
       }
-    }).catch(err => {
-      console.error('[OfferLetter] Email error:', err.message);
-    });
+    })();
   }
 
   // Notify trainer
@@ -352,4 +362,121 @@ export const withdrawApplication = asyncHandler(async (req, res) => {
   await application.save();
 
   res.status(200).json({ success: true, message: 'Application withdrawn' });
+});
+
+// ─── Get All Offer Letters (Admin) ──────────────────────────────────────────
+export const getAllOfferLetters = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, search } = req.query;
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  const [offerLetters, total] = await Promise.all([
+    Application.find({ status: 'approved' })
+      .populate('studentId', 'name email firstName lastName collegeName course year avatar')
+      .populate('internshipId', 'title category status duration startDate endDate')
+      .populate('reviewedBy', 'name')
+      .sort({ reviewedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit)),
+    Application.countDocuments({ status: 'approved' }),
+  ]);
+
+  // Filter by search term if provided
+  let filtered = offerLetters;
+  if (search) {
+    const term = search.toLowerCase();
+    filtered = offerLetters.filter(app => {
+      const studentName = (app.studentId?.name || `${app.studentId?.firstName || ''} ${app.studentId?.lastName || ''}`).toLowerCase();
+      const studentEmail = (app.studentId?.email || '').toLowerCase();
+      const internshipTitle = (app.internshipId?.title || '').toLowerCase();
+      return studentName.includes(term) || studentEmail.includes(term) || internshipTitle.includes(term);
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { offerLetters: filtered, total, pages: Math.ceil(total / limit), page: parseInt(page) },
+  });
+});
+
+// ─── Download Offer Letter PDF ──────────────────────────────────────────────
+export const downloadOfferLetterPDF = asyncHandler(async (req, res) => {
+  const application = await getOfferLetterApplication(req.params.id);
+
+  if (!application) {
+    return res.status(404).json({ success: false, message: 'Application not found' });
+  }
+  if (application.status !== 'approved') {
+    return res.status(400).json({ success: false, message: 'Offer letter is only available for approved applications' });
+  }
+
+  // Verify access: student who owns it, or admin/trainer
+  if (req.user.role === 'student' && application.studentId._id.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+
+  const student = application.studentId;
+  const studentName = student?.name || `${student?.firstName || ''} ${student?.lastName || ''}`.trim() || 'Student';
+  const fileName = `Offer-Letter-${studentName.replace(/\s+/g, '-')}-${application._id}.pdf`;
+
+  const pdfBuffer = await generateOfferLetterPDFBuffer(application);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(pdfBuffer);
+});
+
+// ─── Resend Offer Letter Email (Admin) ──────────────────────────────────────
+export const resendOfferLetterEmail = asyncHandler(async (req, res) => {
+  const application = await getOfferLetterApplication(req.params.id);
+
+  if (!application) {
+    return res.status(404).json({ success: false, message: 'Application not found' });
+  }
+  if (application.status !== 'approved') {
+    return res.status(400).json({ success: false, message: 'Offer letter is only available for approved applications' });
+  }
+  if (!application.internshipId) {
+    return res.status(400).json({ success: false, message: 'Internship details not found for this application' });
+  }
+
+  const student = application.studentId;
+  if (!student?.email) {
+    return res.status(400).json({ success: false, message: 'Student email not found' });
+  }
+
+  const studentName = student?.name || `${student?.firstName || ''} ${student?.lastName || ''}`.trim() || 'Student';
+  const trainerName = student.assignedTrainer?.name || null;
+
+  // Generate the offer letter PDF and send the email with it attached
+  const pdfBuffer = await generateOfferLetterPDFBuffer(application);
+  const result = await sendOfferLetterEmail(
+    student.email,
+    studentName,
+    application.internshipId.title,
+    application.internshipId.category,
+    application.internshipId.duration,
+    trainerName,
+    application._id,
+    pdfBuffer,
+    application.reviewedAt
+  );
+
+  if (!result?.success) {
+    return res.status(500).json({ success: false, message: `Failed to send offer letter email: ${result?.error || 'email service error'}` });
+  }
+
+  await logActivity({
+    userId: req.user._id,
+    action: 'generate',
+    entity: 'application',
+    entityId: application._id,
+    details: { offerLetterEmailResent: true, sentTo: student.email },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Offer letter email with PDF has been resent to ${student.email}`,
+  });
 });

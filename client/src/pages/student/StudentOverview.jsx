@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiUser, FiBriefcase, FiCheckSquare, FiAward, FiTrendingUp, FiRefreshCw, FiFileText, FiCalendar, FiCheckCircle, FiClock } from 'react-icons/fi';
+import { FiUser, FiBriefcase, FiCheckSquare, FiAward, FiTrendingUp, FiRefreshCw, FiFileText, FiCalendar, FiCheckCircle, FiClock, FiDownload, FiEye } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api';
 
@@ -9,6 +11,7 @@ const StudentOverview = () => {
   const [stats, setStats] = useState(null);
   const [offerLetters, setOfferLetters] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => {
     fetchStats();
@@ -37,6 +40,36 @@ const StudentOverview = () => {
   };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
+
+  const handlePDF = async (offer, mode = 'download') => {
+    if (downloadingId) return;
+    setDownloadingId(offer._id);
+    try {
+      const res = await api.get(`/applications/offer-letters/${offer._id}/download`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const title = (offer.internshipId?.title || 'Offer-Letter').replace(/[^a-z0-9]+/gi, '-');
+      const fileName = `Offer-Letter-${title}.pdf`;
+      if (mode === 'view') {
+        window.open(url, '_blank');
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+        toast.success('Offer letter downloaded');
+      }
+    } catch (err) {
+      console.error('Failed to get offer letter:', err);
+      toast.error('Failed to download offer letter');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const statCards = [
     { label: 'Profile Completion', value: `${stats?.profileCompletion || 0}%`, icon: <FiUser size={24} />, color: 'bg-blue-500' },
@@ -109,13 +142,20 @@ const StudentOverview = () => {
 
       {/* Offer Letters Section */}
       <div className="mt-6">
-        <div className="flex items-center gap-2 mb-4">
-          <FiFileText size={20} className="text-green-500" />
-          <h3 className="font-semibold text-dark-900 dark:text-white text-lg">Internship Offer Letters</h3>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <FiFileText size={20} className="text-green-500" />
+            <h3 className="font-semibold text-dark-900 dark:text-white text-lg">Internship Offer Letters</h3>
+            {offerLetters.length > 0 && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
+                {offerLetters.length}
+              </span>
+            )}
+          </div>
           {offerLetters.length > 0 && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
-              {offerLetters.length}
-            </span>
+            <Link to="/student/offer-letters" className="text-xs text-green-600 dark:text-green-400 hover:underline font-medium">
+              View All &rarr;
+            </Link>
           )}
         </div>
 
@@ -180,10 +220,21 @@ const StudentOverview = () => {
                       )}
                     </div>
                   )}
-                  <div className="mt-4 pt-3 border-t border-dark-100 dark:border-dark-700">
-                    <p className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
-                      <FiCheckCircle size={12} /> Offer letter sent to your email
-                    </p>
+                  <div className="mt-4 pt-3 border-t border-dark-100 dark:border-dark-700 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handlePDF(offer, 'view')}
+                      disabled={downloadingId === offer._id}
+                      className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium disabled:opacity-50"
+                    >
+                      <FiEye size={14} /> {downloadingId === offer._id ? 'Loading...' : 'View PDF'}
+                    </button>
+                    <button
+                      onClick={() => handlePDF(offer, 'download')}
+                      disabled={downloadingId === offer._id}
+                      className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-medium disabled:opacity-50"
+                    >
+                      <FiDownload size={14} /> {downloadingId === offer._id ? 'Loading...' : 'Download PDF'}
+                    </button>
                   </div>
                 </motion.div>
               );

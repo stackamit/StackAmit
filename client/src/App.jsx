@@ -39,6 +39,7 @@ import AdminApplications from './pages/admin/AdminApplications';
 import AdminDiscussion from './pages/admin/AdminDiscussion';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminFeedback from './pages/admin/AdminFeedback';
+import AdminOfferLetters from './pages/admin/AdminOfferLetters';
 import AdminProfile from './pages/admin/AdminProfile';
 
 // Trainer Pages
@@ -57,6 +58,7 @@ import StudentTasks from './pages/student/StudentTasks';
 import StudentApplications from './pages/student/StudentApplications';
 import StudentDiscussion from './pages/student/StudentDiscussion';
 import StudentCertificates from './pages/student/StudentCertificates';
+import StudentOfferLetters from './pages/student/StudentOfferLetters';
 
 // Shared Pages
 import NotificationsPage from './pages/shared/NotificationsPage';
@@ -145,6 +147,7 @@ function App() {
           <Route path="certificates" element={<AdminCertificates />} />
           <Route path="assignments" element={<AdminAssignments />} />
           <Route path="applications" element={<AdminApplications />} />
+          <Route path="offer-letters" element={<AdminOfferLetters />} />
           <Route path="discussions" element={<AdminDiscussion />} />
           <Route path="feedback" element={<AdminFeedback />} />
           <Route path="profile" element={<AdminProfile />} />
@@ -189,6 +192,7 @@ function App() {
           <Route path="applications" element={<StudentApplications />} />
           <Route path="discussions" element={<StudentDiscussion />} />
           <Route path="certificates" element={<StudentCertificates />} />
+          <Route path="offer-letters" element={<StudentOfferLetters />} />
           <Route path="feedback" element={<FeedbackPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
         </Route>
