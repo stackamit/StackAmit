@@ -9,6 +9,7 @@ const typeConfig = {
   certificate_issued: { icon: FiAward,     color: 'text-purple-500',  bg: 'bg-purple-100 dark:bg-purple-900/30', label: 'Certificate' },
   application_status: { icon: FiFileText,  color: 'text-indigo-500',  bg: 'bg-indigo-100 dark:bg-indigo-900/30', label: 'Application' },
   internship_approved:{ icon: FiCheck,     color: 'text-green-500',   bg: 'bg-green-100 dark:bg-green-900/30',   label: 'Internship' },
+  offer_letter:       { icon: FiAward,     color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30', label: 'Offer Letter' },
   welcome:            { icon: FiUsers,     color: 'text-primary-500', bg: 'bg-primary-100 dark:bg-primary-900/30',label: 'Welcome' },
   general:            { icon: FiBell,      color: 'text-dark-500',    bg: 'bg-dark-100 dark:bg-dark-700',        label: 'General' },
 };

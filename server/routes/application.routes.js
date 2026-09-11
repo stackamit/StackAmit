@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-  applyForInternship, getMyApplications, getAllApplications,
+  applyForInternship, getMyApplications, getOfferLetters, getAllApplications,
   getInternshipApplications,
   approveApplication, rejectApplication, withdrawApplication,
 } from '../controllers/application.controller.js';
@@ -11,6 +11,7 @@ router.use(protect);
 
 router.post('/apply', authorize('student'), applyForInternship);
 router.get('/my', authorize('student'), getMyApplications);
+router.get('/offer-letters', authorize('student'), getOfferLetters);
 router.get('/all', authorize('admin'), getAllApplications);
 router.get('/internship/:internshipId', authorize('admin', 'trainer'), getInternshipApplications);
 router.patch('/:id/approve', authorize('admin', 'trainer'), approveApplication);

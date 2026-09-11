@@ -251,3 +251,81 @@ export const sendCertificateEmail = async (to, studentName, internshipTitle, cer
   };
   return sendEmail(msg);
 };
+
+export const sendOfferLetterEmail = async (to, studentName, internshipTitle, category, duration, trainerName) => {
+  const trainerSection = trainerName
+    ? `<p><strong>Assigned Trainer:</strong> ${trainerName}</p>`
+    : '';
+  const durationText = duration ? `${duration.weeks} weeks (${duration.hoursPerWeek || 20} hrs/week)` : 'As per program schedule';
+
+  const msg = {
+    to,
+    from: process.env.EMAIL_FROM,
+    subject: `Internship Offer Letter - ${internshipTitle} | StackAmit`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7fc; margin: 0; padding: 20px; }
+        .container { max-width: 620px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 40px 30px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 26px; }
+        .header p { color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 15px; }
+        .body { padding: 30px; }
+        .body h2 { color: #1a1a2e; margin-top: 0; }
+        .body p { color: #555; line-height: 1.7; font-size: 14px; }
+        .offer-box { background: #f0fff4; border: 2px solid #38ef7d; border-radius: 10px; padding: 20px; margin: 20px 0; }
+        .offer-box h3 { color: #11998e; margin: 0 0 12px; font-size: 16px; }
+        .offer-box table { width: 100%; border-collapse: collapse; }
+        .offer-box td { padding: 6px 0; font-size: 14px; color: #555; }
+        .offer-box td:first-child { font-weight: 600; color: #333; width: 160px; }
+        .congrats { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 6px; margin: 20px 0; }
+        .congrats p { margin: 0; color: #92400e; font-weight: 500; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 10px 0; }
+        .footer { background: #f8f9ff; padding: 20px 30px; text-align: center; color: #888; font-size: 13px; }
+        .footer p { margin: 4px 0; }
+      </style></head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Internship Offer Letter</h1>
+            <p>StackAmit Internship Program</p>
+          </div>
+          <div class="body">
+            <p style="font-size: 15px;">Dear <strong>${studentName}</strong>,</p>
+            <div class="congrats">
+              <p>Congratulations! We are pleased to offer you an internship at StackAmit.</p>
+            </div>
+            <p>Based on your application and profile, you have been selected to join our internship program. Below are the details of your offer:</p>
+
+            <div class="offer-box">
+              <h3>Offer Details</h3>
+              <table>
+                <tr><td>Position</td><td>${internshipTitle}</td></tr>
+                <tr><td>Category</td><td>${category}</td></tr>
+                <tr><td>Duration</td><td>${durationText}</td></tr>
+                ${trainerName ? `<tr><td>Assigned Trainer</td><td>${trainerName}</td></tr>` : ''}
+                <tr><td>Offer Date</td><td>${new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
+              </table>
+            </div>
+
+            <p>As an intern at StackAmit, you will have the opportunity to work on real-world projects, receive mentorship from industry professionals, and earn a certificate upon successful completion of the program.</p>
+
+            <p>Please log in to your student dashboard to view your tasks, connect with your trainer, and track your progress throughout the internship.</p>
+
+            <a href="${process.env.CLIENT_URL}/student/overview" class="btn">Go to Dashboard</a>
+
+            <p style="margin-top: 20px;">We look forward to a productive and enriching experience with you!</p>
+            <p style="color: #333;"><strong>Best regards,</strong><br>Team StackAmit</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply directly.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+  return sendEmail(msg);
+};

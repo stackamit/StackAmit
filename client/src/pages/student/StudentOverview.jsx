@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FiUser, FiBriefcase, FiCheckSquare, FiAward, FiTrendingUp, FiRefreshCw } from 'react-icons/fi';
+import { FiUser, FiBriefcase, FiCheckSquare, FiAward, FiTrendingUp, FiRefreshCw, FiFileText, FiCalendar, FiCheckCircle, FiClock } from 'react-icons/fi';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api';
 
 const StudentOverview = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [offerLetters, setOfferLetters] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchStats();
+    fetchOfferLetters();
   }, []);
 
   const fetchStats = async () => {
@@ -24,6 +26,17 @@ const StudentOverview = () => {
       setLoading(false);
     }
   };
+
+  const fetchOfferLetters = async () => {
+    try {
+      const { data } = await api.get('/applications/offer-letters');
+      setOfferLetters(data?.data?.offerLetters || []);
+    } catch (err) {
+      console.error('Failed to fetch offer letters:', err);
+    }
+  };
+
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
 
   const statCards = [
     { label: 'Profile Completion', value: `${stats?.profileCompletion || 0}%`, icon: <FiUser size={24} />, color: 'bg-blue-500' },
@@ -92,6 +105,91 @@ const StudentOverview = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Offer Letters Section */}
+      <div className="mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <FiFileText size={20} className="text-green-500" />
+          <h3 className="font-semibold text-dark-900 dark:text-white text-lg">Internship Offer Letters</h3>
+          {offerLetters.length > 0 && (
+            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
+              {offerLetters.length}
+            </span>
+          )}
+        </div>
+
+        {offerLetters.length === 0 ? (
+          <div className="card p-8 text-center text-dark-400">
+            <FiFileText size={40} className="mx-auto mb-3 opacity-40" />
+            <p className="text-sm font-medium">No offer letters yet</p>
+            <p className="text-xs mt-1">Your offer letters will appear here when your internship applications are approved.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {offerLetters.map((offer) => {
+              const internship = offer.internshipId;
+              return (
+                <motion.div
+                  key={offer._id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="card p-6 border-l-4 border-l-green-500"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-green-100 dark:bg-green-900/30">
+                        <FiCheckCircle size={22} className="text-green-500" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-dark-900 dark:text-white text-sm">{internship?.title || 'Internship'}</p>
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                          Approved
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-1.5">
+                    {internship?.category && (
+                      <p className="text-xs text-dark-500 dark:text-dark-400">
+                        <span className="font-medium">Category:</span> {internship.category}
+                      </p>
+                    )}
+                    {internship?.duration && (
+                      <p className="text-xs text-dark-500 dark:text-dark-400">
+                        <span className="font-medium">Duration:</span> {internship.duration.weeks} weeks ({internship.duration.hoursPerWeek || 20} hrs/week)
+                      </p>
+                    )}
+                    <p className="text-xs text-dark-500 dark:text-dark-400 flex items-center gap-1">
+                      <FiCalendar size={12} />
+                      <span className="font-medium">Offer Date:</span> {formatDate(offer.reviewedAt || offer.updatedAt)}
+                    </p>
+                    {offer.reviewedBy?.name && (
+                      <p className="text-xs text-dark-500 dark:text-dark-400">
+                        <span className="font-medium">Approved By:</span> {offer.reviewedBy.name}
+                      </p>
+                    )}
+                  </div>
+                  {internship?.skills?.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {internship.skills.slice(0, 4).map((skill, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded bg-dark-100 dark:bg-dark-700 text-dark-600 dark:text-dark-400">{skill}</span>
+                      ))}
+                      {internship.skills.length > 4 && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-dark-100 dark:bg-dark-700 text-dark-500">+{internship.skills.length - 4}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-4 pt-3 border-t border-dark-100 dark:border-dark-700">
+                    <p className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+                      <FiCheckCircle size={12} /> Offer letter sent to your email
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

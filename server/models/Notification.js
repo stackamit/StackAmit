@@ -23,7 +23,7 @@ const notificationSchema = new mongoose.Schema(
         'project_approved', 'project_rejected', 'resubmission_requested',
         'certificate_issued', 'internship_approved', 'internship_rejected',
         'internship_completed', 'application_status', 'welcome',
-        'password_reset', 'general'
+        'password_reset', 'offer_letter', 'general'
       ],
       default: 'general',
     },

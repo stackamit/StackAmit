@@ -4,6 +4,8 @@ import Student from '../models/Student.js';
 import Trainer from '../models/Trainer.js';
 import { logActivity } from '../services/activityLog.service.js';
 import { createNotification, notifyAdmins } from '../services/notification.service.js';
+import { sendOfferLetterEmail } from '../services/email.service.js';
+import { getIO } from '../socket/index.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 // ─── Apply for Internship ────────────────────────────────────────────────────
@@ -69,6 +71,19 @@ export const getMyApplications = asyncHandler(async (req, res) => {
   console.log('[getMyApplications] Found', applications.length, 'applications for user', req.user._id);
 
   res.status(200).json({ success: true, data: { applications } });
+});
+
+// ─── Get Offer Letters (Approved Applications for Student) ───────────────────
+export const getOfferLetters = asyncHandler(async (req, res) => {
+  const applications = await Application.find({
+    studentId: req.user._id,
+    status: 'approved',
+  })
+    .populate('internshipId', 'title category description duration startDate endDate skills responsibilities learningOutcomes')
+    .populate('reviewedBy', 'name')
+    .sort({ reviewedAt: -1 });
+
+  res.status(200).json({ success: true, data: { offerLetters: applications } });
 });
 
 // ─── Get All Applications (Admin) ────────────────────────────────────────────
@@ -196,12 +211,50 @@ export const approveApplication = asyncHandler(async (req, res) => {
   // Notify student
   await createNotification({
     userId: application.studentId._id,
-    title: 'Application Approved!',
-    message: `Your application for "${application.internshipId.title}" has been approved!${trainer ? ` Your trainer is ${trainer.name}.` : ''}`,
-    type: 'internship_approved',
+    title: 'Internship Offer Letter Received!',
+    message: `Congratulations! Your application for "${application.internshipId.title}" has been approved. You have received an internship offer letter.${trainer ? ` Your trainer is ${trainer.name}.` : ''} Check your dashboard and email for the offer letter.`,
+    type: 'offer_letter',
     relatedEntity: 'application',
     relatedId: application._id,
+    actionUrl: '/student/overview',
   });
+
+  // Emit real-time socket notification to the student
+  try {
+    const io = getIO();
+    io.to(`user:${application.studentId._id}`).emit('notification', {
+      title: 'Internship Offer Letter Received!',
+      message: `Congratulations! Your application for "${application.internshipId.title}" has been approved. Check your email and dashboard for the offer letter.`,
+      type: 'offer_letter',
+      relatedEntity: 'application',
+      relatedId: application._id,
+      actionUrl: '/student/overview',
+    });
+  } catch (socketErr) {
+    console.error('Socket emit error (offer letter):', socketErr.message);
+  }
+
+  // Send offer letter email (non-blocking - don't fail the request if email fails)
+  const studentName = application.studentId?.name || `${application.studentId?.firstName || ''} ${application.studentId?.lastName || ''}`.trim() || 'Student';
+  const studentEmail = application.studentId?.email;
+  if (studentEmail) {
+    sendOfferLetterEmail(
+      studentEmail,
+      studentName,
+      application.internshipId.title,
+      application.internshipId.category,
+      application.internshipId.duration,
+      trainer?.name || null
+    ).then(result => {
+      if (result?.success) {
+        console.log(`[OfferLetter] Email sent to ${studentEmail} for "${application.internshipId.title}"`);
+      } else {
+        console.warn(`[OfferLetter] Email failed for ${studentEmail}:`, result?.error);
+      }
+    }).catch(err => {
+      console.error('[OfferLetter] Email error:', err.message);
+    });
+  }
 
   // Notify trainer
   if (trainer) {
