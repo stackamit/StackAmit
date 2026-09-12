@@ -246,7 +246,7 @@ const HomePage = () => {
               { q: 'How do I apply for an internship?', a: 'Simply register on our platform, complete your profile, and browse available internships. Click apply on any program you are interested in.' },
               { q: 'Are the certificates recognized?', a: 'Yes! Our certificates are industry-recognized and come with unique verification IDs that employers can validate.' },
               { q: 'What is the duration of programs?', a: 'Programs range from 4 to 12 weeks depending on the category and depth of the internship.' },
-              { q: 'Is there any fee to participate?', a: 'Our internship programs are free for students. We believe in accessible education for all.' },
+              { q: 'Is there any fee to participate?', a: 'Our internship programs are highly accessible with just a nominal processing fee of INR 50 for Indian students and USD 2 for NRI students. We believe in providing affordable, quality education for all.' },
             ].map((faq, i) => (
               <motion.details key={i} {...fadeInUp} transition={{ delay: i * 0.05 }} className="card p-5 group">
                 <summary className="font-semibold text-dark-900 dark:text-white cursor-pointer list-none flex justify-between items-center">
