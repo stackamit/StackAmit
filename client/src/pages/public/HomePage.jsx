@@ -17,8 +17,8 @@ const HomePage = () => {
   const heroBadge = settings.heroBadge || 'Now Enrolling for 2026';
   const heroTitle = settings.heroTitle || 'Launch Your Career with StackAmit';
   const heroSubtitle = settings.heroSubtitle || 'Join our professional internship programs designed to bridge the gap between academic learning and industry demands. Get mentored by experts, build real projects, and earn recognized certificates.';
-  const statStudents = settings.statStudents || '500+';
-  const statTrainers = settings.statTrainers || '50+';
+  const statStudents = settings.statStudents || '5+';
+  const statTrainers = settings.statTrainers || '2';
   const statSuccessRate = settings.statSuccessRate || '95%';
   const whyTitle = settings.whyTitle || 'Why Choose StackAmit?';
   const whySubtitle = settings.whySubtitle || 'We provide a complete ecosystem for learning, growth, and career advancement.';
