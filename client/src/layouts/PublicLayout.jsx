@@ -28,6 +28,7 @@ const Navbar = () => {
           <div className="hidden md:flex items-center gap-8">
             <Link to="/" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Home</Link>
             <Link to="/internships" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Internships</Link>
+            <Link to="/articles" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Articles</Link>
             <Link to="/about" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">About</Link>
             <Link to="/contact" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Contact</Link>
             <Link to="/feedback" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Feedback</Link>
@@ -61,6 +62,7 @@ const Navbar = () => {
           <div className="px-4 py-4 space-y-3">
             <Link to="/" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Home</Link>
             <Link to="/internships" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Internships</Link>
+            <Link to="/articles" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Articles</Link>
             <Link to="/about" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>About</Link>
             <Link to="/contact" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Contact</Link>
             <Link to="/feedback" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Feedback</Link>
@@ -96,6 +98,8 @@ const Footer = () => {
           <h4 className="font-semibold text-white mb-4">Quick Links</h4>
           <div className="space-y-2 text-sm">
             <Link to="/" className="block hover:text-primary-400 transition-colors">Home</Link>
+            <Link to="/internships" className="block hover:text-primary-400 transition-colors">Internships</Link>
+            <Link to="/articles" className="block hover:text-primary-400 transition-colors">Articles</Link>
             <Link to="/about" className="block hover:text-primary-400 transition-colors">About Us</Link>
             <Link to="/contact" className="block hover:text-primary-400 transition-colors">Contact</Link>
             <Link to="/feedback" className="block hover:text-primary-400 transition-colors">Feedback</Link>

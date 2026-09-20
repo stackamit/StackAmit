@@ -1,5 +1,5 @@
 import DashboardLayout from './DashboardLayout';
-import { FiHome, FiUsers, FiUserCheck, FiBriefcase, FiSettings, FiAward, FiBell, FiGitMerge, FiFileText, FiMessageSquare, FiStar, FiUser, FiMail } from 'react-icons/fi';
+import { FiHome, FiUsers, FiUserCheck, FiBriefcase, FiSettings, FiAward, FiBell, FiGitMerge, FiFileText, FiMessageSquare, FiStar, FiUser, FiMail, FiEdit3 } from 'react-icons/fi';
 
 const sidebarItems = [
   { path: 'overview', label: 'Overview', icon: <FiHome size={18} /> },
@@ -12,6 +12,7 @@ const sidebarItems = [
   { path: 'applications', label: 'Applications', icon: <FiFileText size={18} /> },
   { path: 'offer-letters', label: 'Offer Letters', icon: <FiMail size={18} /> },
   { path: 'discussions', label: 'Discussions', icon: <FiMessageSquare size={18} /> },
+  { path: 'articles', label: 'My Articles', icon: <FiEdit3 size={18} /> },
   { path: 'feedback', label: 'Feedback', icon: <FiStar size={18} /> },
   { path: 'notifications', label: 'Notifications', icon: <FiBell size={18} /> },
   { path: 'settings', label: 'Settings', icon: <FiSettings size={18} /> },

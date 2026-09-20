@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiArrowRight, FiCheckCircle, FiUsers, FiAward, FiBriefcase, FiZap, FiShield, FiGlobe, FiSearch, FiCamera } from 'react-icons/fi';
+import { FiArrowRight, FiCheckCircle, FiUsers, FiAward, FiBriefcase, FiZap, FiShield, FiGlobe, FiSearch, FiCamera, FiBookOpen } from 'react-icons/fi';
 import { FaLinkedin, FaYoutube, FaFacebook, FaInstagram, FaGithub } from 'react-icons/fa';
 import useSiteSettings from '../../hooks/useSiteSettings';
 
@@ -143,6 +143,34 @@ const HomePage = () => {
               </Link>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Community Articles Banner */}
+      <section className="py-16 bg-dark-50 dark:bg-dark-900">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div
+            {...fadeInUp}
+            className="card p-8 flex flex-col sm:flex-row items-center gap-6 border-2 border-primary-100 dark:border-primary-900/30"
+          >
+            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-2xl flex items-center justify-center flex-shrink-0">
+              <FiBookOpen size={32} className="text-primary-600 dark:text-primary-400" />
+            </div>
+            <div className="flex-1 text-center sm:text-left">
+              <h3 className="text-xl font-bold text-dark-900 dark:text-white">Explore Community Articles</h3>
+              <p className="text-dark-500 dark:text-dark-400 mt-1">
+                Courses, tutorials, guides and blogs shared by the StackAmit community — free for everyone to read and learn from.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 flex-shrink-0">
+              <Link
+                to="/articles"
+                className="btn-primary flex items-center gap-2 text-sm py-3 px-6"
+              >
+                Browse Articles <FiArrowRight size={16} />
+              </Link>
+            </div>
+          </motion.div>
         </div>
       </section>
 

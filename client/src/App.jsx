@@ -17,6 +17,8 @@ import VerifyCertificatePage from './pages/public/VerifyCertificatePage';
 import CertificateViewPage from './pages/public/CertificateViewPage';
 import CertificateScannerPage from './pages/public/CertificateScannerPage';
 import InternshipsPage from './pages/public/InternshipsPage';
+import ArticlesPage from './pages/public/ArticlesPage';
+import ArticleViewPage from './pages/public/ArticleViewPage';
 import TermsAndConditionsPage from './pages/public/TermsAndConditionsPage';
 import FeedbackPage from './pages/public/FeedbackPage';
 
@@ -62,6 +64,8 @@ import StudentOfferLetters from './pages/student/StudentOfferLetters';
 
 // Shared Pages
 import NotificationsPage from './pages/shared/NotificationsPage';
+import MyArticlesPage from './pages/shared/MyArticlesPage';
+import ArticleEditorPage from './pages/shared/ArticleEditorPage';
 
 // Error Pages
 import NotFoundPage from './pages/NotFoundPage';
@@ -108,6 +112,8 @@ function App() {
           <Route path="/certificate/:id" element={<CertificateViewPage />} />
           <Route path="/scan-certificate" element={<CertificateScannerPage />} />
           <Route path="/internships" element={<InternshipsPage />} />
+          <Route path="/articles" element={<ArticlesPage />} />
+          <Route path="/article/:id" element={<ArticleViewPage />} />
           <Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
           <Route path="/feedback" element={<FeedbackPage />} />
         </Route>
@@ -148,6 +154,9 @@ function App() {
           <Route path="assignments" element={<AdminAssignments />} />
           <Route path="applications" element={<AdminApplications />} />
           <Route path="offer-letters" element={<AdminOfferLetters />} />
+          <Route path="articles" element={<MyArticlesPage />} />
+          <Route path="articles/new" element={<ArticleEditorPage />} />
+          <Route path="articles/edit/:id" element={<ArticleEditorPage />} />
           <Route path="discussions" element={<AdminDiscussion />} />
           <Route path="feedback" element={<AdminFeedback />} />
           <Route path="profile" element={<AdminProfile />} />
@@ -170,6 +179,9 @@ function App() {
           <Route path="tasks" element={<TrainerTasks />} />
           <Route path="discussions" element={<TrainerDiscussion />} />
           <Route path="certificates" element={<TrainerCertificates />} />
+          <Route path="articles" element={<MyArticlesPage />} />
+          <Route path="articles/new" element={<ArticleEditorPage />} />
+          <Route path="articles/edit/:id" element={<ArticleEditorPage />} />
           <Route path="profile" element={<TrainerProfile />} />
           <Route path="feedback" element={<FeedbackPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
@@ -193,6 +205,9 @@ function App() {
           <Route path="discussions" element={<StudentDiscussion />} />
           <Route path="certificates" element={<StudentCertificates />} />
           <Route path="offer-letters" element={<StudentOfferLetters />} />
+          <Route path="articles" element={<MyArticlesPage />} />
+          <Route path="articles/new" element={<ArticleEditorPage />} />
+          <Route path="articles/edit/:id" element={<ArticleEditorPage />} />
           <Route path="feedback" element={<FeedbackPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
         </Route>

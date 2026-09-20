@@ -35,6 +35,7 @@ import reportRoutes from './routes/report.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
 import discussionRoutes from './routes/discussion.routes.js';
 import feedbackRoutes from './routes/feedback.routes.js';
+import articleRoutes from './routes/article.routes.js';
 
 const app = express();
 const server = createServer(app);
@@ -119,6 +120,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/discussions', discussionRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/articles', articleRoutes);
 // ─── root route ────
 app.get('/', (req, res) => {
   res.status(200).json({

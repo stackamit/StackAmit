@@ -21,7 +21,8 @@ const activityLogSchema = new mongoose.Schema(
       required: true,
       enum: [
         'user', 'student', 'trainer', 'internship', 'application',
-        'task', 'submission', 'certificate', 'notification', 'setting'
+        'task', 'submission', 'certificate', 'notification', 'setting',
+        'article'
       ],
     },
     entityId: mongoose.Schema.Types.ObjectId,
