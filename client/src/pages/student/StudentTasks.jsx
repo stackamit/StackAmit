@@ -140,6 +140,18 @@ const StudentTasks = () => {
               <div><label className="label">GitHub Link</label><input className="input-field" value={submitForm.githubLink} onChange={e => setSubmitForm({ ...submitForm, githubLink: e.target.value })} placeholder="https://github.com/..." /></div>
               <div><label className="label">Live URL</label><input className="input-field" value={submitForm.liveUrl} onChange={e => setSubmitForm({ ...submitForm, liveUrl: e.target.value })} placeholder="https://..." /></div>
               <div><label className="label">Remarks</label><textarea className="input-field" rows={3} value={submitForm.remarks} onChange={e => setSubmitForm({ ...submitForm, remarks: e.target.value })} placeholder="Any notes..." /></div>
+              {/* Google Form Link */}
+              <div className="pt-2"><p className="text-sm text-gray-600 mb-2">After submitting your task, please complete the task submission form:</p>
+
+                <a
+                  href="https://forms.gle/YOUR_GOOGLE_FORM_ID"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 font-medium underline"
+                >
+                  📋 Open Task Submission Google Form
+                </a>
+              </div>
               <div className="flex justify-end gap-3 pt-4"><button type="button" onClick={() => setShowSubmit(null)} className="btn-outline text-sm">Cancel</button><button type="submit" disabled={submitting} className="btn-primary text-sm">{submitting ? 'Submitting...' : 'Submit Task'}</button></div>
             </form>
           </div>
