@@ -320,6 +320,11 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
               <a href="${offerLettersUrl}" class="btn">View &amp; Download Offer Letters</a>
             </div>
 
+            // Whatsapp group link
+            <div class="btn-group">
+              <a href="https://chat.whatsapp.com/KT6g7vy7QeC7tXR0hPq5HR" class="btn" target="_blank" rel="noopener noreferrer">Join WhatsApp Group</a>
+            </div>
+
             <p>Please log in to your student dashboard to view your tasks, connect with your trainer, and track your progress throughout the internship.</p>
 
             <p style="margin-top: 20px;">We look forward to a productive and enriching experience with you!</p>
