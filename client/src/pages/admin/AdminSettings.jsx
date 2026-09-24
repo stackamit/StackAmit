@@ -93,6 +93,7 @@ const AdminSettings = () => {
     { key: 'contactPhone', category: 'website', description: 'Contact phone', group: 'Contact Page' },
     { key: 'contactAddress', category: 'website', description: 'Contact address', group: 'Contact Page' },
     // Social Media
+    { key: 'socialWhatspp', category: 'website', description: 'Whatsapp URL', group: 'Social Media' },
     { key: 'socialLinkedin', category: 'website', description: 'LinkedIn URL', group: 'Social Media' },
     { key: 'socialYoutube', category: 'website', description: 'YouTube URL', group: 'Social Media' },
     { key: 'socialFacebook', category: 'website', description: 'Facebook URL', group: 'Social Media' },
