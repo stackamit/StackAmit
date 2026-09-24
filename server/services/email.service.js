@@ -1,26 +1,28 @@
-import sgMail from '@sendgrid/mail';
+import sgMail from "@sendgrid/mail";
 
 const isSendGridConfigured = () => {
   const key = process.env.SENDGRID_API_KEY;
-  return key && key.startsWith('SG.');
+  return key && key.startsWith("SG.");
 };
 
 if (isSendGridConfigured()) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 } else {
-  console.warn('SendGrid: Invalid API key. Email sending is disabled.');
+  console.warn("SendGrid: Invalid API key. Email sending is disabled.");
 }
 
 const sendEmail = async (msg) => {
   if (!isSendGridConfigured()) {
-    console.warn(`Email not sent (SendGrid not configured). Would have sent to: ${msg.to}, subject: ${msg.subject}`);
-    return { success: false, error: 'Email service not configured' };
+    console.warn(
+      `Email not sent (SendGrid not configured). Would have sent to: ${msg.to}, subject: ${msg.subject}`,
+    );
+    return { success: false, error: "Email service not configured" };
   }
   try {
     await sgMail.send(msg);
     return { success: true };
   } catch (error) {
-    console.error('SendGrid Error:', error.response?.body || error.message);
+    console.error("SendGrid Error:", error.response?.body || error.message);
     return { success: false, error: error.message };
   }
 };
@@ -40,7 +42,7 @@ export const sendWelcomeStudentEmail = async (to, name, tempPassword) => {
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
-    subject: 'Welcome to StackAmit Internship Program!',
+    subject: "Welcome to StackAmit Internship Program!",
     html: `
       <!DOCTYPE html>
       <html>
@@ -86,7 +88,7 @@ export const sendWelcomeTrainerEmail = async (to, name, tempPassword) => {
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
-    subject: 'Welcome to StackAmit as a Trainer!',
+    subject: "Welcome to StackAmit as a Trainer!",
     html: `
       <!DOCTYPE html>
       <html>
@@ -131,11 +133,11 @@ export const sendWelcomeTrainerEmail = async (to, name, tempPassword) => {
   return sendEmail(msg);
 };
 
-export const sendOTPEmail = async (to, otp, purpose = 'verification') => {
+export const sendOTPEmail = async (to, otp, purpose = "verification") => {
   const subjects = {
-    registration: 'Verify Your Email - StackAmit',
-    password_reset: 'Password Reset OTP - StackAmit',
-    email_verification: 'Email Verification - StackAmit',
+    registration: "Verify Your Email - StackAmit",
+    password_reset: "Password Reset OTP - StackAmit",
+    email_verification: "Email Verification - StackAmit",
   };
 
   const msg = {
@@ -160,7 +162,7 @@ export const sendOTPEmail = async (to, otp, purpose = 'verification') => {
           <div class="header"><h1>StackAmit</h1></div>
           <div class="body">
             <h2>Verification Code</h2>
-            <p>Use the following OTP to ${purpose === 'password_reset' ? 'reset your password' : 'verify your email'}:</p>
+            <p>Use the following OTP to ${purpose === "password_reset" ? "reset your password" : "verify your email"}:</p>
             <div class="otp">${otp}</div>
             <p>This code expires in 10 minutes. Do not share it with anyone.</p>
           </div>
@@ -177,7 +179,7 @@ export const sendPasswordResetEmail = async (to, name, resetUrl) => {
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
-    subject: 'Password Reset Request - StackAmit',
+    subject: "Password Reset Request - StackAmit",
     html: `
       <!DOCTYPE html>
       <html>
@@ -209,7 +211,12 @@ export const sendPasswordResetEmail = async (to, name, resetUrl) => {
   return sendEmail(msg);
 };
 
-export const sendTaskAssignedEmail = async (to, studentName, taskTitle, dueDate) => {
+export const sendTaskAssignedEmail = async (
+  to,
+  studentName,
+  taskTitle,
+  dueDate,
+) => {
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
@@ -231,7 +238,12 @@ export const sendTaskAssignedEmail = async (to, studentName, taskTitle, dueDate)
   return sendEmail(msg);
 };
 
-export const sendCertificateEmail = async (to, studentName, internshipTitle, certNumber) => {
+export const sendCertificateEmail = async (
+  to,
+  studentName,
+  internshipTitle,
+  certNumber,
+) => {
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
@@ -252,9 +264,27 @@ export const sendCertificateEmail = async (to, studentName, internshipTitle, cer
   return sendEmail(msg);
 };
 
-export const sendOfferLetterEmail = async (to, studentName, internshipTitle, category, duration, trainerName, applicationId, pdfBuffer = null, offerDate = null) => {
-  const durationText = duration ? `${duration.weeks} weeks (${duration.hoursPerWeek || 20} hrs/week)` : 'As per program schedule';
-  const offerDateText = (offerDate ? new Date(offerDate) : new Date()).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+export const sendOfferLetterEmail = async (
+  to,
+  studentName,
+  internshipTitle,
+  category,
+  duration,
+  trainerName,
+  applicationId,
+  pdfBuffer = null,
+  offerDate = null,
+) => {
+  const durationText = duration
+    ? `${duration.weeks} weeks (${duration.hoursPerWeek || 20} hrs/week)`
+    : "As per program schedule";
+  const offerDateText = (
+    offerDate ? new Date(offerDate) : new Date()
+  ).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
   const offerLettersUrl = `${process.env.CLIENT_URL}/student/offer-letters`;
 
   const msg = {
@@ -305,16 +335,16 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
                 <tr><td>Position</td><td>${internshipTitle}</td></tr>
                 <tr><td>Category</td><td>${category}</td></tr>
                 <tr><td>Duration</td><td>${durationText}</td></tr>
-                ${trainerName ? `<tr><td>Assigned Trainer</td><td>${trainerName}</td></tr>` : ''}
+                ${trainerName ? `<tr><td>Assigned Trainer</td><td>${trainerName}</td></tr>` : ""}
                 <tr><td>Offer Date</td><td>${offerDateText}</td></tr>
               </table>
             </div>
 
             <p>As an intern at StackAmit, you will have the opportunity to work on real-world projects, receive mentorship from industry professionals, and earn a certificate upon successful completion of the program.</p>
 
-            <p>Your official offer letter in PDF format ${pdfBuffer ? 'is <strong>attached to this email</strong> - simply open or download the attachment' : 'can be downloaded from your student dashboard'}.</p>
+            <p>Your official offer letter in PDF format ${pdfBuffer ? "is <strong>attached to this email</strong> - simply open or download the attachment" : "can be downloaded from your student dashboard"}.</p>
 
-            ${pdfBuffer ? '<p style="background: #f0fff4; border: 1px solid #38ef7d; border-radius: 8px; padding: 12px 16px; color: #11998e; font-weight: 600;">&#128206; Offer-Letter.pdf is attached to this email.</p>' : ''}
+            ${pdfBuffer ? '<p style="background: #f0fff4; border: 1px solid #38ef7d; border-radius: 8px; padding: 12px 16px; color: #11998e; font-weight: 600;">&#128206; Offer-Letter.pdf is attached to this email.</p>' : ""}
 
             <div class="btn-group">
               <a href="${offerLettersUrl}" class="btn">View &amp; Download Offer Letters</a>
@@ -323,7 +353,6 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
             <div class="btn-group">
               <a href="https://chat.whatsapp.com/KT6g7vy7QeC7tXR0hPq5HR" class="btn" target="_blank" rel="noopener noreferrer">Join WhatsApp Group</a>
             </div>
-
             <p>Please log in to your student dashboard to view your tasks, connect with your trainer, and track your progress throughout the internship.</p>
 
             <p style="margin-top: 20px;">We look forward to a productive and enriching experience with you!</p>
@@ -341,12 +370,14 @@ export const sendOfferLetterEmail = async (to, studentName, internshipTitle, cat
 
   // Attach the offer letter PDF to the email when provided
   if (pdfBuffer) {
-    msg.attachments = [{
-      content: pdfBuffer.toString('base64'),
-      filename: `Offer-Letter-${(studentName || 'Student').replace(/\s+/g, '-')}.pdf`,
-      type: 'application/pdf',
-      disposition: 'attachment',
-    }];
+    msg.attachments = [
+      {
+        content: pdfBuffer.toString("base64"),
+        filename: `Offer-Letter-${(studentName || "Student").replace(/\s+/g, "-")}.pdf`,
+        type: "application/pdf",
+        disposition: "attachment",
+      },
+    ];
   }
 
   return sendEmail(msg);

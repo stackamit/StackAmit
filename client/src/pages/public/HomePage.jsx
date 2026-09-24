@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiArrowRight, FiCheckCircle, FiUsers, FiAward, FiBriefcase, FiZap, FiShield, FiGlobe, FiSearch, FiCamera, FiBookOpen } from 'react-icons/fi';
-import { FaLinkedin, FaYoutube, FaFacebook, FaInstagram, FaGithub } from 'react-icons/fa';
+import { FaLinkedin, FaYoutube, FaFacebook, FaInstagram, FaGithub, FaWhatsapp } from 'react-icons/fa';
 import useSiteSettings from '../../hooks/useSiteSettings';
 
 const fadeInUp = {
@@ -305,6 +305,7 @@ const HomePage = () => {
               { key: 'socialFacebook', icon: <FaFacebook size={28} />, label: 'Facebook', color: 'hover:text-blue-700 hover:border-blue-700', bg: 'hover:bg-blue-700' },
               { key: 'socialInstagram', icon: <FaInstagram size={28} />, label: 'Instagram', color: 'hover:text-pink-600 hover:border-pink-600', bg: 'hover:bg-pink-600' },
               { key: 'socialGithub', icon: <FaGithub size={28} />, label: 'GitHub', color: 'hover:text-gray-800 hover:border-gray-800 dark:hover:text-white dark:hover:border-white', bg: 'hover:bg-gray-800 dark:hover:bg-white' },
+              { key: 'socialWhatsapp', icon: <FaWhatsapp size={28} />, label: 'WhatsApp', color: 'hover:text-green-500 hover:border-green-500', bg: 'hover:bg-green-500' },
             ].map((social) => {
               const url = settings[social.key];
               if (!url) return null;

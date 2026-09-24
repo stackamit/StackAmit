@@ -98,6 +98,7 @@ const AdminSettings = () => {
     { key: 'socialFacebook', category: 'website', description: 'Facebook URL', group: 'Social Media' },
     { key: 'socialInstagram', category: 'website', description: 'Instagram URL', group: 'Social Media' },
     { key: 'socialGithub', category: 'website', description: 'GitHub URL', group: 'Social Media' },
+    { key: 'socialWhatsapp', category: 'website', description: 'WhatsApp Channel URL', group: 'Social Media' },
   ];
 
   // ─── Confidential Settings Keys ─────────────────────────────────────────
