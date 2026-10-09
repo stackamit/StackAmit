@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   FiSave, FiRefreshCw, FiCheck, FiAlertCircle, FiShield, FiMail,
-  FiClock, FiKey, FiX, FiPlus, FiUsers, FiStar, FiBookOpen,
+  FiClock, FiKey, FiX, FiPlus, FiUsers, FiStar, FiBookOpen, FiUpload,
 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -80,6 +80,27 @@ const TrainerProfile = () => {
     }
   };
 
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('avatar', file);
+    setMessage({ type: '', text: '' });
+    try {
+      const { data } = await api.post('/auth/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      if (data.data.avatar) {
+        const updatedUser = { ...(profileData || user), avatar: data.data.avatar };
+        setUser(updatedUser);
+        setProfileData(updatedUser);
+      }
+      setMessage({ type: 'success', text: 'Profile photo updated!' });
+      setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to upload profile photo.' });
+    }
+    e.target.value = '';
+  };
+
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', {
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   }) : 'N/A';
@@ -134,6 +155,11 @@ const TrainerProfile = () => {
           <span className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-300 rounded-full text-xs font-medium capitalize">
             <FiShield size={12} /> Trainer
           </span>
+
+          <label className="btn-outline mt-4 text-sm flex items-center gap-2 mx-auto cursor-pointer w-max">
+            <FiUpload size={14} /> Upload Photo
+            <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+          </label>
 
           {/* Trainer Stats */}
           <div className="mt-5 grid grid-cols-3 gap-2">

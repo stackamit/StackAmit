@@ -211,6 +211,64 @@ export const sendPasswordResetEmail = async (to, name, resetUrl) => {
   return sendEmail(msg);
 };
 
+// Sent AFTER a password has been reset, delivering the login email + the new password.
+export const sendPasswordResetSuccessEmail = async (to, name, email, newPassword) => {
+  const msg = {
+    to,
+    from: process.env.EMAIL_FROM,
+    subject: "Your Password Has Been Reset - StackAmit",
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7fc; margin: 0; padding: 20px; }
+        .container { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 36px 30px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 24px; }
+        .header p { color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 15px; }
+        .body { padding: 30px; }
+        .body h2 { color: #1a1a2e; margin-top: 0; }
+        .body p { color: #555; line-height: 1.7; font-size: 14px; }
+        .credentials { background: #f8f9ff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .credentials p { margin: 8px 0; font-size: 14px; }
+        .credentials strong { color: #333; }
+        .credentials .value { color: #11998e; font-weight: 700; word-break: break-all; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+        .security { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; margin: 18px 0; }
+        .security p { margin: 0; color: #92400e; font-size: 13px; }
+        .footer { background: #f8f9ff; padding: 20px 30px; text-align: center; color: #888; font-size: 13px; }
+        .footer p { margin: 4px 0; }
+      </style></head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Password Reset Successful</h1>
+            <p>StackAmit Internship Platform</p>
+          </div>
+          <div class="body">
+            <h2>Hello ${name || "there"},</h2>
+            <p>Your password has been reset successfully. You can now log in using the credentials below:</p>
+            <div class="credentials">
+              <p><strong>Email:</strong> <span class="value">${email}</span></p>
+              <p><strong>New Password:</strong> <span class="value">${newPassword}</span></p>
+            </div>
+            <a href="${process.env.CLIENT_URL}/login" class="btn">Login Now</a>
+            <div class="security">
+              <p>For your security, please keep this password safe and consider changing it after logging in. If you did not request this reset, contact StackAmit support immediately.</p>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply directly.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+  return sendEmail(msg);
+};
+
 export const sendTaskAssignedEmail = async (
   to,
   studentName,
@@ -243,24 +301,100 @@ export const sendCertificateEmail = async (
   studentName,
   internshipTitle,
   certNumber,
+  options = {},
 ) => {
+  const { type = "completion", issuedDate = null, verificationUrl = null, pdfBuffer = null } = options;
+  const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+  const issuedDateText = (issuedDate ? new Date(issuedDate) : new Date()).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const certificatesUrl = `${process.env.CLIENT_URL}/student/certificates`;
+
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
-    subject: `Your Certificate is Ready - StackAmit`,
+    subject: `Your ${typeLabel} Certificate is Ready - StackAmit`,
     html: `
-      <div style="font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 12px;">
-        <h2 style="color: #38a169;">Certificate Issued!</h2>
-        <p>Congratulations ${studentName}!</p>
-        <p>Your certificate for <strong>${internshipTitle}</strong> has been generated.</p>
-        <div style="background: #f0fff4; padding: 15px; border-radius: 8px; margin: 15px 0;">
-          <p><strong>Certificate Number:</strong> ${certNumber}</p>
+      <!DOCTYPE html>
+      <html>
+      <head><style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7fc; margin: 0; padding: 20px; }
+        .container { max-width: 620px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 100%); padding: 40px 30px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 26px; }
+        .header p { color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 15px; }
+        .body { padding: 30px; }
+        .body p { color: #555; line-height: 1.7; font-size: 14px; }
+        .cert-box { background: #f0fff4; border: 2px solid #38a169; border-radius: 10px; padding: 20px; margin: 20px 0; }
+        .cert-box h3 { color: #276749; margin: 0 0 12px; font-size: 16px; }
+        .cert-box table { width: 100%; border-collapse: collapse; }
+        .cert-box td { padding: 6px 0; font-size: 14px; color: #555; }
+        .cert-box td:first-child { font-weight: 600; color: #333; width: 180px; }
+        .congrats { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 6px; margin: 20px 0; }
+        .congrats p { margin: 0; color: #92400e; font-weight: 500; }
+        .attachment-note { background: #f0fff4; border: 1px solid #38ef7d; border-radius: 8px; padding: 12px 16px; color: #11998e; font-weight: 600; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 6px 4px 6px 0; }
+        .footer { background: #f8f9ff; padding: 20px 30px; text-align: center; color: #888; font-size: 13px; }
+        .footer p { margin: 4px 0; }
+      </style></head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>&#127942; Certificate Issued!</h1>
+            <p>StackAmit Internship Program</p>
+          </div>
+          <div class="body">
+            <p style="font-size: 15px;">Dear <strong>${studentName}</strong>,</p>
+            <div class="congrats">
+              <p>Congratulations! Your ${typeLabel} Certificate has been generated.</p>
+            </div>
+            <p>Thank you for your dedication and hard work throughout the program. Here are your certificate details:</p>
+
+            <div class="cert-box">
+              <h3>Certificate Details</h3>
+              <table>
+                <tr><td>Certificate Number</td><td>${certNumber}</td></tr>
+                <tr><td>Internship Program</td><td>${internshipTitle}</td></tr>
+                <tr><td>Certificate Type</td><td>${typeLabel}</td></tr>
+                <tr><td>Issue Date</td><td>${issuedDateText}</td></tr>
+              </table>
+            </div>
+
+            <p>Your official certificate in PDF format ${pdfBuffer ? "is <strong>attached to this email</strong> - simply open or download the attachment" : "can be downloaded from your student dashboard"}.</p>
+
+            ${pdfBuffer ? `<p class="attachment-note">&#128206; Certificate-${certNumber}.pdf is attached to this email.</p>` : ""}
+
+            ${verificationUrl ? `<p style="font-size: 13px; color: #888;">Anyone can verify this certificate using the link: <a href="${verificationUrl}" style="color:#1e3a5f;">${verificationUrl}</a></p>` : ""}
+
+            <a href="${certificatesUrl}" class="btn">View &amp; Download Certificate</a>
+
+            <p style="margin-top: 20px;">We wish you all the best in your future endeavors!</p>
+            <p style="color: #333;"><strong>Best regards,</strong><br>Team StackAmit</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply directly.</p>
+          </div>
         </div>
-        <p>Log in to your dashboard to download your certificate.</p>
-        <a href="${process.env.CLIENT_URL}/student/certificates" style="display: inline-block; background: #38a169; color: #fff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">Download Certificate</a>
-      </div>
+      </body>
+      </html>
     `,
   };
+
+  // Attach the certificate PDF to the email when provided
+  if (pdfBuffer) {
+    msg.attachments = [
+      {
+        content: pdfBuffer.toString("base64"),
+        filename: `Certificate-${(studentName || "Student").replace(/\s+/g, "-")}-${certNumber}.pdf`,
+        type: "application/pdf",
+        disposition: "attachment",
+      },
+    ];
+  }
+
   return sendEmail(msg);
 };
 

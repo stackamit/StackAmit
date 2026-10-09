@@ -2,7 +2,8 @@ import express from 'express';
 import {
   generateCertificate, getCertificates, verifyCertificate,
   revokeCertificate, getCertificateStats, getCertificateById,
-  downloadCertificatePDF, getCertificateQR,
+  getCertificateByIdPublic, downloadCertificatePDF, getCertificateQR,
+  resendCertificateEmail,
 } from '../controllers/certificate.controller.js';
 import { protect, authorize } from '../middleware/auth.js';
 
@@ -10,6 +11,8 @@ const router = express.Router();
 
 // Public verification
 router.get('/verify', verifyCertificate);
+// Public certificate view (shareable link / QR target)
+router.get('/:id/public', getCertificateByIdPublic);
 
 // Protected routes
 router.use(protect);
@@ -19,6 +22,7 @@ router.get('/', getCertificates);
 router.get('/:id', getCertificateById);
 router.get('/:id/download', downloadCertificatePDF);
 router.get('/:id/qr', getCertificateQR);
+router.post('/:id/resend-email', authorize('admin'), resendCertificateEmail);
 router.patch('/:id/revoke', authorize('admin'), revokeCertificate);
 
 export default router;

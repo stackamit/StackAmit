@@ -39,7 +39,9 @@ const StudentInternships = () => {
     finally { setApplying(null); }
   };
 
-  const hasApplied = (id) => myApplications.some(a => a.internshipId?._id === id);
+  const hasApplied = (id) => myApplications.some(a => a.internshipId?._id === id && a.status !== 'withdrawn');
+  // Only one internship at a time: a pending or approved (non-completed) application blocks new applications
+  const activeApplication = myApplications.find(a => ['pending', 'approved'].includes(a.status));
   const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
@@ -48,6 +50,16 @@ const StudentInternships = () => {
         <div><h1 className="page-title">Browse Internships</h1><p className="page-subtitle">Find and apply for internship programs</p></div>
         <button onClick={fetchInternships} className="btn-outline flex items-center gap-2 text-sm self-start"><FiRefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh</button>
       </div>
+
+      {activeApplication && (
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-400">
+          {activeApplication.status === 'approved' ? (
+            <>You are currently undergoing <strong>{activeApplication.internshipId?.title || 'an internship'}</strong>. You can apply for another internship after it is completed.</>
+          ) : (
+            <>You have a pending application for <strong>{activeApplication.internshipId?.title || 'an internship'}</strong>. Only one internship application can be active at a time.</>
+          )}
+        </div>
+      )}
 
       <div className="table-container mb-6">
         <div className="table-header flex flex-col sm:flex-row gap-4">
@@ -79,6 +91,8 @@ const StudentInternships = () => {
                 <div className="flex-shrink-0">
                   {hasApplied(i._id) ? (
                     <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-lg text-sm font-medium">Applied</span>
+                  ) : activeApplication ? (
+                    <button disabled title="You already have an active internship application" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-dark-100 text-dark-400 dark:bg-dark-700 cursor-not-allowed">Not Available</button>
                   ) : (
                     <button onClick={() => handleApply(i._id)} disabled={applying === i._id} className="btn-primary text-sm">{applying === i._id ? 'Applying...' : 'Apply Now'}</button>
                   )}

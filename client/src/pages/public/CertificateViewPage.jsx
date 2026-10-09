@@ -7,9 +7,8 @@ import {
   FiCalendar, FiCopy, FiCheck, FiSquare, FiAlertTriangle,
 } from 'react-icons/fi';
 import { QRCodeSVG } from 'qrcode.react';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import toast from 'react-hot-toast';
+import api from '../../services/api';
 
 const typeConfig = {
   completion: { label: 'Completion', gradient: 'from-blue-600 to-indigo-700', accent: '#4f46e5' },
@@ -33,7 +32,8 @@ const CertificateViewPage = () => {
   const fetchCertificate = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API_URL}/api/certificates/${id}`);
+      // Public, display-safe endpoint (works for shareable links without login)
+      const { data } = await api.get(`/certificates/${id}/public`);
       setCertificate(data.data);
     } catch (err) {
       setError(err.response?.status === 404 ? 'Certificate not found' : 'Failed to load certificate');
@@ -45,10 +45,8 @@ const CertificateViewPage = () => {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/certificates/${id}/download`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const res = await api.get(`/certificates/${id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `Certificate-${certificate?.certificate?.certificateNumber || id}.pdf`);
@@ -58,6 +56,11 @@ const CertificateViewPage = () => {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Download failed:', err);
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        toast.error('Please log in to download this certificate.');
+      } else {
+        toast.error('Failed to download certificate. Please try again.');
+      }
     } finally {
       setDownloading(false);
     }

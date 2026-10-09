@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiAward, FiRefreshCw, FiCheckCircle, FiXCircle, FiSearch, FiEye, FiDownload, FiShare2 } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import api from '../../services/api';
 
 const StudentCertificates = () => {
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => { fetchCertificates(); }, []);
 
@@ -19,6 +21,29 @@ const StudentCertificates = () => {
       setCertificates(data.data.certificates);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  };
+
+  const handleDownload = async (c) => {
+    if (downloadingId) return;
+    setDownloadingId(c._id);
+    try {
+      const res = await api.get(`/certificates/${c._id}/download`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Certificate-${c.certificateNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+      toast.success('Certificate downloaded');
+    } catch (err) {
+      console.error('Failed to download certificate:', err);
+      toast.error('Failed to download certificate. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -66,9 +91,9 @@ const StudentCertificates = () => {
                   <Link to={`/certificate/${c._id}`} className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-xs font-medium">
                     <FiEye size={14} /> View
                   </Link>
-                  <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/certificates/${c._id}/download`} className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium">
-                    <FiDownload size={14} /> PDF
-                  </a>
+                  <button onClick={() => handleDownload(c)} disabled={downloadingId === c._id} className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium disabled:opacity-50">
+                    {downloadingId === c._id ? <FiRefreshCw size={14} className="animate-spin" /> : <FiDownload size={14} />} PDF
+                  </button>
                   <Link to={`/certificate/${c._id}`} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium">
                     <FiShare2 size={14} />
                   </Link>

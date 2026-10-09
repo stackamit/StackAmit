@@ -4,8 +4,8 @@ import Internship from '../models/Internship.js';
 import { logActivity } from '../services/activityLog.service.js';
 import { createNotification } from '../services/notification.service.js';
 import { sendCertificateEmail } from '../services/email.service.js';
+import { getCertificatePopulated, generateCertificatePDFBuffer, streamCertificatePDF } from '../services/certificate.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 
 // ─── Generate Certificate ────────────────────────────────────────────────────
@@ -46,7 +46,30 @@ export const generateCertificate = asyncHandler(async (req, res) => {
     relatedId: certificate._id,
   });
 
-  await sendCertificateEmail(student.email, student.name, internship.title, certificateNumber);
+  // Send certificate email with the PDF attached (non-blocking - don't fail the request if email fails)
+  const studentEmail = student.email;
+  if (studentEmail) {
+    (async () => {
+      try {
+        const fullCertificate = await getCertificatePopulated(certificate._id);
+        const pdfBuffer = fullCertificate ? await generateCertificatePDFBuffer(fullCertificate) : null;
+        const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificateNumber}`;
+        const result = await sendCertificateEmail(studentEmail, student.name, internship.title, certificateNumber, {
+          type,
+          issuedDate: certificate.issuedDate,
+          verificationUrl,
+          pdfBuffer,
+        });
+        if (result?.success) {
+          console.log(`[Certificate] Email ${pdfBuffer ? 'with PDF attachment ' : ''}sent to ${studentEmail} for ${certificateNumber}`);
+        } else {
+          console.warn(`[Certificate] Email failed for ${studentEmail}:`, result?.error);
+        }
+      } catch (err) {
+        console.error('[Certificate] Email error:', err.message);
+      }
+    })();
+  }
 
   await logActivity({
     userId: req.user._id,
@@ -180,12 +203,15 @@ export const getCertificateStats = asyncHandler(async (req, res) => {
 
 // ─── Get Certificate by ID ──────────────────────────────────────────────────
 export const getCertificateById = asyncHandler(async (req, res) => {
-  const certificate = await Certificate.findById(req.params.id)
-    .populate('studentId', 'name email firstName lastName collegeName university course branch year')
-    .populate('internshipId', 'title category startDate endDate duration');
+  const certificate = await getCertificatePopulated(req.params.id);
 
   if (!certificate) {
     return res.status(404).json({ success: false, message: 'Certificate not found' });
+  }
+
+  // Verify access: student who owns it, or admin/trainer
+  if (req.user.role === 'student' && certificate.studentId?._id?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
   const frontendUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/certificate/${certificate._id}`;
@@ -197,179 +223,98 @@ export const getCertificateById = asyncHandler(async (req, res) => {
   });
 });
 
-// ─── Download Certificate PDF ───────────────────────────────────────────────
-export const downloadCertificatePDF = asyncHandler(async (req, res) => {
+// ─── Get Certificate by ID (Public - for shareable view page) ──────────────
+export const getCertificateByIdPublic = asyncHandler(async (req, res) => {
   const certificate = await Certificate.findById(req.params.id)
-    .populate('studentId', 'name email firstName lastName collegeName university course')
     .populate('internshipId', 'title category startDate endDate duration');
 
   if (!certificate) {
     return res.status(404).json({ success: false, message: 'Certificate not found' });
   }
 
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0 });
-  const fileName = `Certificate-${certificate.certificateNumber}.pdf`;
+  // Return only display-safe fields (no student email or personal details)
+  const publicCertificate = {
+    _id: certificate._id,
+    certificateNumber: certificate.certificateNumber,
+    type: certificate.type,
+    studentName: certificate.studentName,
+    internshipTitle: certificate.internshipTitle,
+    duration: certificate.duration,
+    issuedDate: certificate.issuedDate,
+    createdAt: certificate.createdAt,
+    isRevoked: certificate.isRevoked,
+    internshipId: certificate.internshipId,
+  };
 
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-  doc.pipe(res);
-
-  const pageWidth = doc.page.width;
-  const pageHeight = doc.page.height;
-  const centerX = pageWidth / 2;
-
-  // Background
-  doc.rect(0, 0, pageWidth, pageHeight).fill('#ffffff');
-
-  // Outer border
-  doc.strokeColor('#1e3a5f');
-  doc.lineWidth(4);
-  doc.rect(30, 30, pageWidth - 60, pageHeight - 60).stroke();
-
-  // Inner border
-  doc.strokeColor('#c9a84c');
-  doc.lineWidth(2);
-  doc.rect(40, 40, pageWidth - 80, pageHeight - 80).stroke();
-
-  // Decorative corner accents
-  const cornerSize = 30;
-  const corners = [
-    [50, 50], [pageWidth - 50 - cornerSize, 50],
-    [50, pageHeight - 50 - cornerSize], [pageWidth - 50 - cornerSize, pageHeight - 50 - cornerSize]
-  ];
-  doc.fillColor('#c9a84c');
-  corners.forEach(([cx, cy]) => {
-    doc.rect(cx, cy, cornerSize, 3).fill();
-    doc.rect(cx, cy, 3, cornerSize).fill();
-  });
-  // Top-right corner
-  doc.rect(pageWidth - 50 - cornerSize, 50, cornerSize, 3).fill();
-  doc.rect(pageWidth - 53, 50, 3, cornerSize).fill();
-  // Bottom-left
-  doc.rect(50, pageHeight - 53, cornerSize, 3).fill();
-  doc.rect(50, pageHeight - 50 - cornerSize, 3, cornerSize).fill();
-  // Bottom-right
-  doc.rect(pageWidth - 50 - cornerSize, pageHeight - 53, cornerSize, 3).fill();
-  doc.rect(pageWidth - 53, pageHeight - 50 - cornerSize, 3, cornerSize).fill();
-
-  // StackAmit header
-  doc.fillColor('#1e3a5f');
-  doc.fontSize(14).font('Helvetica-Bold');
-  const brandY = 80;
-  doc.text('STACKAMIT', centerX - 60, brandY, { width: 120, align: 'center' });
-
-  // Decorative line under brand
-  doc.moveTo(centerX - 100, brandY + 22).lineTo(centerX + 100, brandY + 22)
-    .strokeColor('#c9a84c').lineWidth(1.5).stroke();
-
-  // Title
-  doc.fillColor('#1e3a5f');
-  doc.fontSize(36).font('Helvetica-Bold');
-  doc.text('CERTIFICATE', centerX - 200, 130, { width: 400, align: 'center' });
-
-  // Subtitle
-  const typeLabel = certificate.type.charAt(0).toUpperCase() + certificate.type.slice(1);
-  doc.fillColor('#c9a84c');
-  doc.fontSize(18).font('Helvetica');
-  doc.text(`of ${typeLabel}`, centerX - 200, 178, { width: 400, align: 'center' });
-
-  // Decorative line
-  doc.moveTo(centerX - 80, 208).lineTo(centerX + 80, 208)
-    .strokeColor('#c9a84c').lineWidth(1).stroke();
-
-  // "This is to certify that"
-  doc.fillColor('#555555');
-  doc.fontSize(13).font('Helvetica');
-  doc.text('This is to certify that', centerX - 200, 225, { width: 400, align: 'center' });
-
-  // Student name
-  const studentName = certificate.studentName ||
-    `${certificate.studentId?.firstName || ''} ${certificate.studentId?.lastName || ''}`.trim() ||
-    'Student';
-  doc.fillColor('#1e3a5f');
-  doc.fontSize(30).font('Helvetica-Bold');
-  doc.text(studentName, centerX - 250, 252, { width: 500, align: 'center' });
-
-  // Underline for name
-  doc.moveTo(centerX - 180, 290).lineTo(centerX + 180, 290)
-    .strokeColor('#c9a84c').lineWidth(1).stroke();
-
-  // "has successfully completed"
-  doc.fillColor('#555555');
-  doc.fontSize(13).font('Helvetica');
-  doc.text('has successfully completed the', centerX - 200, 305, { width: 400, align: 'center' });
-
-  // Internship title
-  doc.fillColor('#1e3a5f');
-  doc.fontSize(22).font('Helvetica-Bold');
-  doc.text(certificate.internshipTitle || 'Internship Program', centerX - 250, 332, { width: 500, align: 'center' });
-
-  // Duration
-  if (certificate.duration) {
-    doc.fillColor('#777777');
-    doc.fontSize(12).font('Helvetica');
-    doc.text(`Duration: ${certificate.duration}`, centerX - 200, 365, { width: 400, align: 'center' });
-  }
-
-  // Internship dates
-  const internship = certificate.internshipId;
-  if (internship?.startDate && internship?.endDate) {
-    const startStr = new Date(internship.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-    const endStr = new Date(internship.endDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.fillColor('#777777');
-    doc.fontSize(11).font('Helvetica');
-    doc.text(`${startStr} — ${endStr}`, centerX - 200, 385, { width: 400, align: 'center' });
-  }
-
-  // Category badge
-  if (internship?.category) {
-    doc.fillColor('#1e3a5f');
-    doc.fontSize(11).font('Helvetica-Bold');
-    doc.text(`Category: ${internship.category}`, centerX - 200, 408, { width: 400, align: 'center' });
-  }
-
-  // Issue date
-  const issueDate = new Date(certificate.issuedDate || certificate.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-  doc.fillColor('#555555');
-  doc.fontSize(11).font('Helvetica');
-  doc.text(`Issued on ${issueDate}`, centerX - 200, 435, { width: 400, align: 'center' });
-
-  // QR Code
   const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
-  try {
-    const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 200, margin: 1, color: { dark: '#1e3a5f', light: '#ffffff' } });
-    const qrSize = 70;
-    const qrX = pageWidth - 130;
-    const qrY = pageHeight - 150;
-    doc.image(qrDataUrl, qrX, qrY, { width: qrSize, height: qrSize });
-    doc.fillColor('#777777');
-    doc.fontSize(7).font('Helvetica');
-    doc.text('Scan to verify', qrX - 5, qrY + qrSize + 3, { width: qrSize + 10, align: 'center' });
-  } catch (qrErr) { console.error('QR generation error:', qrErr.message); }
 
-  // Certificate number at bottom
-  doc.fillColor('#1e3a5f');
-  doc.fontSize(10).font('Helvetica-Bold');
-  doc.text(`Certificate No: ${certificate.certificateNumber}`, 60, pageHeight - 80, { width: 300 });
+  res.status(200).json({
+    success: true,
+    data: { certificate: publicCertificate, verificationUrl },
+  });
+});
 
-  // Verification ID
-  doc.fillColor('#999999');
-  doc.fontSize(8).font('Helvetica');
-  doc.text(`ID: ${certificate.verificationId}`, 60, pageHeight - 65, { width: 300 });
+// ─── Download Certificate PDF ───────────────────────────────────────────────
+export const downloadCertificatePDF = asyncHandler(async (req, res) => {
+  const certificate = await getCertificatePopulated(req.params.id);
 
-  // Footer text
-  doc.fillColor('#999999');
-  doc.fontSize(8).font('Helvetica');
-  doc.text('StackAmit Internship Management System', centerX - 150, pageHeight - 65, { width: 300, align: 'center' });
+  if (!certificate) {
+    return res.status(404).json({ success: false, message: 'Certificate not found' });
+  }
 
-  // Signature area
-  doc.moveTo(pageWidth - 230, pageHeight - 90).lineTo(pageWidth - 80, pageHeight - 90)
-    .strokeColor('#cccccc').lineWidth(0.5).stroke();
-  doc.fillColor('#555555');
-  doc.fontSize(9).font('Helvetica');
-  doc.text('Authorized Signature', pageWidth - 230, pageHeight - 85, { width: 150, align: 'center' });
+  // Verify access: student who owns it, or admin/trainer
+  if (req.user.role === 'student' && certificate.studentId?._id?.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
 
-  doc.end();
+  await streamCertificatePDF(certificate, res);
+});
+
+// ─── Resend Certificate Email (Admin) ───────────────────────────────────────
+export const resendCertificateEmail = asyncHandler(async (req, res) => {
+  const certificate = await getCertificatePopulated(req.params.id);
+
+  if (!certificate) {
+    return res.status(404).json({ success: false, message: 'Certificate not found' });
+  }
+  if (certificate.isRevoked) {
+    return res.status(400).json({ success: false, message: 'Revoked certificates cannot be emailed to students' });
+  }
+
+  const student = certificate.studentId;
+  if (!student?.email) {
+    return res.status(400).json({ success: false, message: 'Student email not found' });
+  }
+
+  const studentName = certificate.studentName || student?.name || `${student?.firstName || ''} ${student?.lastName || ''}`.trim() || 'Student';
+
+  // Generate the certificate PDF and send the email with it attached
+  const pdfBuffer = await generateCertificatePDFBuffer(certificate);
+  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const result = await sendCertificateEmail(student.email, studentName, certificate.internshipTitle, certificate.certificateNumber, {
+    type: certificate.type,
+    issuedDate: certificate.issuedDate || certificate.createdAt,
+    verificationUrl,
+    pdfBuffer,
+  });
+
+  if (!result?.success) {
+    return res.status(500).json({ success: false, message: `Failed to send certificate email: ${result?.error || 'email service error'}` });
+  }
+
+  await logActivity({
+    userId: req.user._id,
+    action: 'generate',
+    entity: 'certificate',
+    entityId: certificate._id,
+    details: { certificateEmailResent: true, sentTo: student.email, certificateNumber: certificate.certificateNumber },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Certificate email with PDF has been resent to ${student.email}`,
+  });
 });
 
 // ─── Get Certificate QR Code ────────────────────────────────────────────────

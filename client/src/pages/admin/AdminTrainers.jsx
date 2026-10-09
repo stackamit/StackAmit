@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FiSearch, FiPlus, FiDownload, FiRefreshCw, FiMoreVertical, FiTrash2, FiUserCheck, FiUser, FiX, FiMail, FiPhone, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
+import { FiSearch, FiPlus, FiDownload, FiRefreshCw, FiMoreVertical, FiTrash2, FiUserCheck, FiUser, FiX, FiMail, FiPhone, FiLock, FiEye, FiEyeOff, FiEdit2 } from 'react-icons/fi';
 import api from '../../services/api';
 
 const AdminTrainers = () => {
@@ -14,6 +14,10 @@ const AdminTrainers = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [editTrainer, setEditTrainer] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', maxStudents: 20 });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const fetchTrainers = useCallback(async () => {
     setLoading(true);
@@ -103,6 +107,37 @@ const AdminTrainers = () => {
     }
   };
 
+  const openEditModal = (trainer) => {
+    setEditTrainer(trainer);
+    setEditForm({
+      name: trainer.name || '',
+      phone: trainer.phone || '',
+      maxStudents: trainer.maxStudents ?? 20,
+    });
+    setEditError('');
+    setActionMenu(null);
+  };
+
+  const handleUpdateTrainer = async (e) => {
+    e.preventDefault();
+    if (!editTrainer) return;
+    setEditError('');
+    setEditLoading(true);
+    try {
+      await api.put(`/trainers/${editTrainer._id}`, {
+        name: editForm.name,
+        phone: editForm.phone,
+        maxStudents: Number(editForm.maxStudents),
+      });
+      setEditTrainer(null);
+      fetchTrainers();
+    } catch (err) {
+      setEditError(err.response?.data?.message || 'Failed to update trainer');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const formatDate = (dateStr) => {
     return new Date(dateStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
   };
@@ -144,6 +179,7 @@ const AdminTrainers = () => {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Email</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Students</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Capacity</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Joined</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-dark-500 dark:text-dark-400 uppercase">Actions</th>
@@ -152,7 +188,7 @@ const AdminTrainers = () => {
             <tbody className="divide-y divide-dark-100 dark:divide-dark-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center">
+                  <td colSpan={7} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <FiRefreshCw size={24} className="animate-spin text-primary-500" />
                       <p className="text-dark-400">Loading trainers...</p>
@@ -161,7 +197,7 @@ const AdminTrainers = () => {
                 </tr>
               ) : trainers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-dark-400 dark:text-dark-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-dark-400 dark:text-dark-500">
                     <FiUser size={40} className="mx-auto mb-3 opacity-30" />
                     <p className="text-lg font-medium">No trainers found</p>
                     <p className="text-sm mt-1">Add trainers to get started.</p>
@@ -185,6 +221,22 @@ const AdminTrainers = () => {
                     <td className="px-6 py-4 text-sm text-dark-600 dark:text-dark-300">
                       {trainer.assignedStudents?.length || 0} assigned
                     </td>
+                    <td className="px-6 py-4 text-sm">
+                      {(() => {
+                        const assigned = trainer.assignedStudents?.length || 0;
+                        const max = trainer.maxStudents ?? 20;
+                        const full = assigned >= max;
+                        return (
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                            full
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                          }`}>
+                            {assigned}/{max}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-6 py-4 text-sm text-dark-500">{formatDate(trainer.createdAt)}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -202,6 +254,9 @@ const AdminTrainers = () => {
                       </button>
                       {actionMenu === trainer._id && (
                         <div className="absolute right-6 top-12 z-10 w-48 bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 py-1">
+                          <button onClick={() => openEditModal(trainer)} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-dark-700 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700">
+                            <FiEdit2 size={16} className="text-blue-500" /> Edit / Capacity
+                          </button>
                           <button onClick={() => handleToggleStatus(trainer._id)} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-dark-700 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700">
                             <FiUserCheck size={16} className={trainer.isActive ? 'text-red-500' : 'text-green-500'} />
                             {trainer.isActive ? 'Deactivate' : 'Activate'}
@@ -371,6 +426,107 @@ const AdminTrainers = () => {
                   ) : (
                     <>
                       <FiPlus size={14} /> Create Trainer
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Trainer / Capacity Modal */}
+      {editTrainer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50" onClick={() => !editLoading && setEditTrainer(null)} />
+          <div className="relative w-full max-w-lg bg-white dark:bg-dark-800 rounded-2xl shadow-2xl animate-scale-in">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-100 dark:border-dark-700">
+              <div>
+                <h2 className="text-lg font-semibold text-dark-900 dark:text-white">Edit Trainer</h2>
+                <p className="text-sm text-dark-400 mt-0.5">Update trainer details and internship capacity</p>
+              </div>
+              <button onClick={() => !editLoading && setEditTrainer(null)} className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700">
+                <FiX size={18} className="text-dark-400" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleUpdateTrainer} className="p-6 space-y-4">
+              {editError && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
+                  {editError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Full Name *</label>
+                  <div className="relative">
+                    <FiUser className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" size={16} />
+                    <input
+                      type="text"
+                      required
+                      value={editForm.name}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="input-field pl-10"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Phone</label>
+                  <div className="relative">
+                    <FiPhone className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" size={16} />
+                    <input
+                      type="tel"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                      className="input-field pl-10"
+                      placeholder="+91 9876543210"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Max Capacity *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editForm.maxStudents}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, maxStudents: e.target.value }))}
+                    className="input-field"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-sm text-blue-700 dark:text-blue-400">
+                Current load: <strong>{editTrainer.assignedStudents?.length || 0}</strong> active student(s) assigned.
+                Capacity decreases when students are assigned and frees up automatically when an internship is marked completed.
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditTrainer(null)}
+                  className="btn-secondary text-sm"
+                  disabled={editLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-sm flex items-center gap-2"
+                  disabled={editLoading}
+                >
+                  {editLoading ? (
+                    <>
+                      <FiRefreshCw size={14} className="animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <FiEdit2 size={14} /> Save Changes
                     </>
                   )}
                 </button>

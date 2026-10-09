@@ -358,7 +358,6 @@ const StudentTasks = () => {
                   {submitting ? "Submitting..." : "Submit Task"}
                 </button>
               </div>
->>>>>>> 1012362 (Added WhatsApp channel on admin setting and home page)
             </form>
           </div>
         </div>

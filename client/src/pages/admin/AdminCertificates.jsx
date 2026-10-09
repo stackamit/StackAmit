@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FiAward, FiSearch, FiRefreshCw, FiX, FiShield, FiDownload } from 'react-icons/fi';
+import { FiAward, FiSearch, FiRefreshCw, FiX, FiShield, FiDownload, FiEye, FiMail } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import api from '../../services/api';
 
 const AdminCertificates = () => {
@@ -13,6 +14,8 @@ const AdminCertificates = () => {
   const [internships, setInternships] = useState([]);
   const [genForm, setGenForm] = useState({ studentId: '', internshipId: '', type: 'completion' });
   const [generating, setGenerating] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [resendingId, setResendingId] = useState(null);
 
   useEffect(() => { fetchCertificates(); fetchStats(); }, []);
 
@@ -44,18 +47,59 @@ const AdminCertificates = () => {
   const handleGenerate = async (e) => {
     e.preventDefault(); setGenerating(true);
     try {
-      await api.post('/certificates/generate', genForm);
+      const { data } = await api.post('/certificates/generate', genForm);
+      toast.success(data.message || 'Certificate generated. Email with PDF has been sent to the student.');
       setShowGenerate(false); setGenForm({ studentId: '', internshipId: '', type: 'completion' });
       fetchCertificates(); fetchStats();
-    } catch (err) { alert(err.response?.data?.message || 'Failed to generate'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to generate'); }
     finally { setGenerating(false); }
+  };
+
+  const handleDownload = async (c) => {
+    if (downloadingId) return;
+    setDownloadingId(c._id);
+    try {
+      const res = await api.get(`/certificates/${c._id}/download`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Certificate-${c.certificateNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+      toast.success('Certificate downloaded');
+    } catch (err) {
+      console.error('Failed to download certificate:', err);
+      toast.error('Failed to download certificate. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleView = (c) => {
+    window.open(`/certificate/${c._id}`, '_blank');
+  };
+
+  const handleResendEmail = async (c) => {
+    if (resendingId) return;
+    setResendingId(c._id);
+    try {
+      const { data } = await api.post(`/certificates/${c._id}/resend-email`);
+      toast.success(data.message || 'Certificate email resent to student');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to resend certificate email');
+    } finally {
+      setResendingId(null);
+    }
   };
 
   const handleRevoke = async (id) => {
     const reason = prompt('Reason for revoking this certificate?');
     if (reason === null) return;
-    try { await api.patch(`/certificates/${id}/revoke`, { reason }); fetchCertificates(); fetchStats(); }
-    catch (err) { console.error(err); }
+    try { await api.patch(`/certificates/${id}/revoke`, { reason }); toast.success('Certificate revoked'); fetchCertificates(); fetchStats(); }
+    catch (err) { toast.error(err.response?.data?.message || 'Failed to revoke certificate'); }
   };
 
   const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -108,7 +152,14 @@ const AdminCertificates = () => {
                   <td className="px-6 py-4 text-sm text-dark-500">{c.duration || 'N/A'}</td>
                   <td className="px-6 py-4 text-sm text-dark-500">{formatDate(c.issuedDate || c.createdAt)}</td>
                   <td className="px-6 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${c.isRevoked ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}><span className={`w-1.5 h-1.5 rounded-full ${c.isRevoked ? 'bg-red-500' : 'bg-green-500'}`}></span>{c.isRevoked ? 'Revoked' : 'Valid'}</span></td>
-                  <td className="px-6 py-4">{!c.isRevoked && <button onClick={() => handleRevoke(c._id)} className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"><FiShield size={14} /> Revoke</button>}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => handleView(c)} title="View" className="p-2 rounded-lg text-dark-500 hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"><FiEye size={15} /></button>
+                      <button onClick={() => handleDownload(c)} disabled={downloadingId === c._id} title="Download PDF" className="p-2 rounded-lg text-dark-500 hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors disabled:opacity-50">{downloadingId === c._id ? <FiRefreshCw size={15} className="animate-spin" /> : <FiDownload size={15} />}</button>
+                      {!c.isRevoked && <button onClick={() => handleResendEmail(c)} disabled={resendingId === c._id} title="Resend email to student" className="p-2 rounded-lg text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors disabled:opacity-50">{resendingId === c._id ? <FiRefreshCw size={15} className="animate-spin" /> : <FiMail size={15} />}</button>}
+                      {!c.isRevoked && <button onClick={() => handleRevoke(c._id)} title="Revoke" className="p-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"><FiShield size={15} /></button>}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

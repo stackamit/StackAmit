@@ -13,9 +13,11 @@ import {
   sendWelcomeStudentEmail,
   sendOTPEmail,
   sendPasswordResetEmail,
+  sendPasswordResetSuccessEmail,
 } from '../services/email.service.js';
 import { logActivity } from '../services/activityLog.service.js';
 import { createNotification } from '../services/notification.service.js';
+import { uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinary.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 // ─── Register (Student Only) ─────────────────────────────────────────────────
@@ -287,6 +289,8 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   }
 
   const otp = OTP.generateOTP();
+  // Clear any stale unverified reset OTPs so only the latest code is valid
+  await OTP.deleteMany({ email, purpose: 'password_reset', verified: false });
   await OTP.create({
     email,
     otp,
@@ -338,9 +342,23 @@ export const resetPassword = asyncHandler(async (req, res) => {
     req,
   });
 
+  // Email the login email + new password to the user (non-blocking - don't fail the reset if email fails)
+  (async () => {
+    try {
+      const result = await sendPasswordResetSuccessEmail(user.email, user.name, user.email, newPassword);
+      if (result?.success) {
+        console.log(`[Auth] Password reset confirmation email sent to ${user.email}`);
+      } else {
+        console.warn(`[Auth] Password reset email failed for ${user.email}:`, result?.error);
+      }
+    } catch (err) {
+      console.error('[Auth] Password reset email error:', err.message);
+    }
+  })();
+
   res.status(200).json({
     success: true,
-    message: 'Password reset successfully. Please login with your new password.',
+    message: 'Password reset successfully. A copy of your new password has been emailed to you. Please login with your new password.',
   });
 });
 
@@ -425,5 +443,41 @@ export const updateProfile = asyncHandler(async (req, res) => {
     success: true,
     message: 'Profile updated successfully.',
     data: { user },
+  });
+});
+
+// ─── Upload Profile Avatar (any authenticated user: admin / trainer / student) ─
+export const uploadAvatar = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'Please upload an image' });
+  }
+
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  // Remove previous avatar from Cloudinary if present
+  if (user.avatar?.public_id) {
+    await deleteFromCloudinary(user.avatar.public_id);
+  }
+
+  const result = await uploadToCloudinary(req.file.buffer, 'avatars', 'image');
+  user.avatar = { public_id: result.public_id, url: result.url };
+  await user.save({ validateBeforeSave: false });
+
+  await logActivity({
+    userId: req.user._id,
+    action: 'update',
+    entity: 'user',
+    entityId: user._id,
+    details: { avatarUpdated: true },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Avatar uploaded successfully',
+    data: { avatar: user.avatar },
   });
 });

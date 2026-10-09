@@ -32,6 +32,28 @@ export const applyForInternship = asyncHandler(async (req, res) => {
     return res.status(409).json({ success: false, message: 'You have already applied for this internship' });
   }
 
+  // A student can pursue only one internship at a time:
+  // block applying while an internship is active (pending or approved application / assigned current internship)
+  const activeApplication = await Application.findOne({
+    studentId: req.user._id,
+    status: { $in: ['pending', 'approved'] },
+  }).populate('internshipId', 'title');
+  if (activeApplication) {
+    return res.status(400).json({
+      success: false,
+      message: activeApplication.status === 'approved'
+        ? `You are currently undergoing the internship "${activeApplication.internshipId?.title || 'current internship'}". You can apply for another internship after it is completed.`
+        : 'You already have a pending application. Only one internship application can be active at a time.',
+    });
+  }
+  const studentDoc = await Student.findById(req.user._id).populate('currentInternship', 'title');
+  if (studentDoc?.currentInternship) {
+    return res.status(400).json({
+      success: false,
+      message: `You are currently undergoing the internship "${studentDoc.currentInternship.title || 'current internship'}". You can apply for another internship after it is completed.`,
+    });
+  }
+
   const application = await Application.create({
     studentId: req.user._id,
     internshipId,
@@ -304,6 +326,82 @@ export const approveApplication = asyncHandler(async (req, res) => {
     success: true,
     message: `Application approved${trainer ? ' and trainer assigned' : ''}`,
     data: { application, trainerAssigned: !!trainer },
+  });
+});
+
+// ─── Complete Internship (Admin) ────────────────────────────────────────────
+// Marks an approved application's internship as completed:
+// - frees the student's current internship so they can apply for another one
+// - removes the student from the trainer's assigned list (trainer capacity is freed)
+export const completeInternship = asyncHandler(async (req, res) => {
+  const application = await Application.findById(req.params.id)
+    .populate('internshipId', 'title')
+    .populate('studentId', 'name email firstName lastName assignedTrainer');
+
+  if (!application) {
+    return res.status(404).json({ success: false, message: 'Application not found' });
+  }
+  if (application.status !== 'approved') {
+    return res.status(400).json({ success: false, message: 'Only approved applications can be marked as completed' });
+  }
+
+  const studentId = application.studentId?._id || application.studentId;
+
+  application.status = 'completed';
+  application.reviewNotes = req.body.notes || application.reviewNotes;
+  await application.save();
+
+  // Free the student's active internship slot
+  await Student.findByIdAndUpdate(studentId, { $unset: { currentInternship: 1 } });
+
+  // Free trainer capacity (remove student from trainer's assigned list)
+  const studentDoc = await Student.findById(studentId).select('assignedTrainer');
+  const trainerId = studentDoc?.assignedTrainer;
+  if (trainerId) {
+    await Trainer.findByIdAndUpdate(trainerId, { $pull: { assignedStudents: studentId } });
+    await Student.findByIdAndUpdate(studentId, { $unset: { assignedTrainer: 1 } });
+  }
+
+  // Notify student that the internship is completed
+  if (studentId) {
+    await createNotification({
+      userId: studentId,
+      title: 'Internship Completed',
+      message: `Your internship "${application.internshipId?.title || ''}" has been marked as completed. You can now apply for another internship.`,
+      type: 'internship_completed',
+      relatedEntity: 'application',
+      relatedId: application._id,
+      actionUrl: '/student/internships',
+    });
+
+    try {
+      const io = getIO();
+      io.to(`user:${studentId}`).emit('notification', {
+        title: 'Internship Completed',
+        message: `Your internship "${application.internshipId?.title || ''}" has been marked as completed. You can now apply for another internship.`,
+        type: 'internship_completed',
+        relatedEntity: 'application',
+        relatedId: application._id,
+        actionUrl: '/student/internships',
+      });
+    } catch (socketErr) {
+      console.error('Socket emit error (internship completed):', socketErr.message);
+    }
+  }
+
+  await logActivity({
+    userId: req.user._id,
+    action: 'update',
+    entity: 'application',
+    entityId: application._id,
+    details: { internshipCompleted: true, trainerId: trainerId || null },
+    req,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Internship marked as completed. Student can now apply for another internship.',
+    data: { application },
   });
 });
 

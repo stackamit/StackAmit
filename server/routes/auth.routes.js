@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   register, verifyEmail, resendOTP, login, logout, refreshToken,
-  forgotPassword, resetPassword, changePassword, getMe, updateProfile,
+  forgotPassword, resetPassword, changePassword, getMe, updateProfile, uploadAvatar,
 } from '../controllers/auth.controller.js';
 import {
   registerValidator, loginValidator, forgotPasswordValidator,
@@ -9,6 +9,7 @@ import {
 } from '../validators/auth.validator.js';
 import { validate } from '../middleware/validate.js';
 import { protect } from '../middleware/auth.js';
+import { upload } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.post('/logout', protect, logout);
 router.post('/change-password', protect, changePasswordValidator, validate, changePassword);
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
+router.post('/avatar', protect, upload.single('avatar'), uploadAvatar);
 
 export default router;

@@ -79,10 +79,22 @@ const AdminApplications = () => {
     } finally { setProcessing(false); }
   };
 
+  const handleComplete = async (app) => {
+    if (!window.confirm(`Mark "${app.internshipId?.title || 'this internship'}" as completed for ${getStudentName(app)}?\n\nThe student will be able to apply for another internship and one slot will be freed on the assigned trainer's capacity.`)) return;
+    setProcessing(true);
+    try {
+      await api.patch(`/applications/${app._id}/complete`);
+      fetchApplications();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to mark as completed');
+    } finally { setProcessing(false); }
+  };
+
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
   const statusColor = (s) => ({
     pending: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
     approved: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     rejected: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
     withdrawn: 'bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400',
   }[s] || '');
@@ -140,6 +152,7 @@ const AdminApplications = () => {
               <option value="">All Status</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
+              <option value="completed">Completed</option>
               <option value="rejected">Rejected</option>
               <option value="withdrawn">Withdrawn</option>
             </select>
@@ -214,6 +227,11 @@ const AdminApplications = () => {
                         <FiXCircle size={12} /> Reject
                       </button>
                     </div>
+                  )}
+                  {app.status === 'approved' && (
+                    <button onClick={() => handleComplete(app)} disabled={processing} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors disabled:opacity-50">
+                      <FiAward size={12} /> Mark Completed
+                    </button>
                   )}
                 </div>
               </div>

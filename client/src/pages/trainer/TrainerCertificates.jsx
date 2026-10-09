@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FiAward, FiSearch, FiRefreshCw, FiX, FiShield } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 import api from '../../services/api';
 
 const TrainerCertificates = () => {
@@ -37,10 +38,11 @@ const TrainerCertificates = () => {
   const handleGenerate = async (e) => {
     e.preventDefault(); setGenerating(true);
     try {
-      await api.post('/certificates/generate', genForm);
+      const { data } = await api.post('/certificates/generate', genForm);
+      toast.success(data.message || 'Certificate generated. Email with PDF has been sent to the student.');
       setShowGenerate(false); setGenForm({ studentId: '', internshipId: '', type: 'completion' });
       fetchCertificates();
-    } catch (err) { alert(err.response?.data?.message || 'Failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to generate certificate'); }
     finally { setGenerating(false); }
   };
 

@@ -109,9 +109,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const resetPassword = async (email, otp, newPassword) => {
+  const resetPassword = async (email, otp, newPassword, confirmPassword) => {
     try {
-      const { data } = await api.post('/auth/reset-password', { email, otp, newPassword });
+      const { data } = await api.post('/auth/reset-password', { email, otp, newPassword, confirmPassword });
       toast.success(data.message);
       return { success: true };
     } catch (error) {
