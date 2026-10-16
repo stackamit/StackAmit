@@ -1,0 +1,162 @@
+================================================================================
+              SKILLS
+              StackAmit | Task Playbooks for AI Agents
+================================================================================
+
+Each skill is a repeatable, verified procedure for a common task in this
+repository. Follow the steps in order; the "Verify" step is mandatory because
+the site is live in production.
+
+================================================================================
+SKILL 1: Run the app locally (Windows PowerShell)
+================================================================================
+1. Start backend:  cd e:\StackAmit\server; npm run dev        (port 5000)
+2. Start frontend: cd e:\StackAmit\client; npm run dev        (port 5173)
+3. If npm fails with "npm.ps1 cannot be loaded", use:
+     & "C:\Program Files\nodejs\npm.cmd" run dev
+4. Ensure client/.env has VITE_API_URL pointing at the backend, and that the
+   backend's CLIENT_URL allows the frontend origin (CORS).
+Verify: login page renders; network tab shows successful /api/auth calls.
+
+================================================================================
+SKILL 2: Verify a code change safely (production-deployed project)
+================================================================================
+1. Frontend edits: build the production bundle —
+     cd e:\StackAmit\client; & "C:\Program Files\nodejs\npm.cmd" run build
+   (dev server alone will NOT catch import-depth / resolution errors.)
+2. Server edits: node --check on every touched file; do NOT restart a live
+   production server from an agent session.
+3. PDF/service edits: write a temporary .mjs smoke script that imports the
+   service, generates output, assert %PDF header + size > 0, then DELETE the
+   script.
+4. Never leave console.log noise, temp files, or TODO markers behind.
+Verify: build exits 0, syntax checks pass, smoke output valid, temp files gone.
+
+================================================================================
+SKILL 3: Add or change an API endpoint
+================================================================================
+1. Model first: if a new enum/status value is assigned anywhere, update the
+   Mongoose schema enum in the SAME change (Application 'completed' lesson).
+2. Controller: server/controllers/<resource>.controller.js — role check at the
+   top, respond with { success, data, message } style already in use.
+3. Routes: register in server/routes/<resource>.routes.js with
+   authenticate + authorize('<roles>') + (validator) middleware chain.
+4. Public endpoints: place under paths the general rate limiter still covers
+   intentionally; auth-flow endpoints belong under /api/auth (separate limiter).
+5. Client: call via the shared Axios instance (client/src/services/api.js) so
+   token refresh and cache rules apply automatically.
+Verify: node --check server files; exercise endpoint via a logged-in session.
+
+================================================================================
+SKILL 4: Add a client page or role-dashboard feature
+================================================================================
+1. Create the page under client/src/pages/<role>/ (admin|student|trainer|
+   public|shared|auth).
+2. Imports from src root use '../../<dir>/<file>' — role pages are TWO levels
+   below src (single '../' breaks the production build).
+3. Register the route in client/src/App.jsx inside the correct layout guard
+   (ProtectedRoute by role; PublicLayout for unauthenticated pages).
+4. Fetch through api.js; use react-hot-toast for user feedback; support dark
+   mode (dark: variants) and Tailwind responsive breakpoints.
+5. Add the sidebar/nav entry in the matching layout (layouts/<Role>Layout.jsx).
+Verify: production build passes; page reachable in dev at the new route.
+
+================================================================================
+SKILL 5: Work with the localStorage API cache (apiCache.js)
+================================================================================
+TO CACHE A NEW ENDPOINT:
+1. Add its path prefix + TTL to CACHE_RULES in
+   client/src/services/apiCache.js (short TTLs 2-10 min for list data; long
+   for rare-change data).
+2. Only GET JSON responses qualify. Never add rules matching blob/download
+   paths — the wrapper already bypasses any config.responseType set.
+3. Mutation invalidation is automatic: successful POST/PUT/PATCH/DELETE to
+   /api/<resource>/... invalidates cached keys of that resource.
+DEBUGGING STALE DATA:
+1. Check keys prefixed "sa_api_" in DevTools > Application > Local Storage.
+2. Keys are user-scoped — an id change (login switch) isolates entries.
+3. clearApiCache() can be invoked from the console for a full wipe.
+Verify: hard reload shows network request; second navigation serves cache.
+
+================================================================================
+SKILL 6: Generate or modify a PDF (offer letter / certificate)
+================================================================================
+1. Services live in server/services/ (offerLetter.service.js,
+   certificate.service.js) using PDFKit streams.
+2. Images: PNG only (no SVG without plugins). Keep assets in server/assets/
+   and resolve paths with path.dirname(fileURLToPath(import.meta.url)).
+3. Guard fs.existsSync for optional assets and try/catch around doc.image so
+   a missing asset degrades to the text-only layout.
+4. Clamp y-positions near pageHeight - N before drawing to avoid overflow
+   exceptions on long content.
+5. Confirm server/assets/ is not git-ignored; it must deploy with the API.
+Verify: temporary smoke script produces a valid PDF (starts with %PDF).
+
+================================================================================
+SKILL 7: Build environment-safe public share links
+================================================================================
+1. NEVER hardcode hosts (localhost or stackamit.netlify.app) in share or
+   verification URLs returned to users.
+2. Use window.location.origin on the client at click/render time.
+3. Prefer native sharing when available:
+   if (navigator.share) await navigator.share({title, url})
+   else copy to clipboard + toast confirmation.
+4. QR codes and email links generated server-side should use CLIENT_URL from
+   env, never a literal domain.
+Verify: link on http://localhost:5173 uses localhost; same code on the
+deployed domain produces the production URL automatically.
+
+================================================================================
+SKILL 8: Adjust rate limiting without breaking auth
+================================================================================
+1. Two limiters in server/server.js:
+   - general: 1000 req / 15 min per IP, skip('/api/auth' or '/api/health')
+   - auth:    100 failed / 15 min (skipSuccessfulRequests: true)
+2. ALWAYS exempt POST /auth/refresh-token (skip on req.originalUrl including
+   '/auth/refresh-token') — throttling it logs users out mid-session.
+3. In skip predicates use req.originalUrl (mounted routes make req.url
+   misleading).
+4. Keep SPA burst headroom: parallel dashboard requests can legitimately
+   fire dozens of calls per page load.
+Verify: log in, navigate 5+ dashboards rapidly, no 429 in network tab.
+
+================================================================================
+SKILL 9: Modify the chat UI (ChatPanel.jsx)
+================================================================================
+1. One shared component for student and trainer views; admin monitor view is
+   read-mostly. Keep props stable (conversationId, otherUser, onBack, ...).
+2. Delivery path: REST POST is primary; socket 'sendMessage' only as fallback.
+   Never remove the REST path.
+3. Read receipts come from message.readBy containing the other participant;
+   double-check UI is derived, not stored.
+4. Grouping rule: same sender within 2 minutes hides avatar/name — keep the
+   boundary logic when editing.
+5. List pages (StudentDiscussion / TrainerDiscussion) bump unread previews on
+   socket 'newMessage' filtered by senderRole !== own role.
+6. Mobile: list/chat switching via mobileView state + onBack arrow (lg:hidden).
+Verify: build passes; send/edit/pin/reply/receipt flow works on both roles.
+
+================================================================================
+SKILL 10: Adjust deployment config (Netlify / Vite)
+================================================================================
+1. netlify.toml: SPA redirect to /index.html, plus [[headers]] blocks —
+   /assets/* immutable (hashed names), /index.html must-revalidate.
+   Header changes need a NEW frontend deploy to take effect.
+2. client/public/_redirects mirrors SPA routing for the frontend host.
+3. Vite manualChunks in client/vite.config.js splits vendor libs (react,
+   motion, emoji, net, icons). Keep chunk names stable across deploys so
+   returning users hit immutable browser cache.
+4. Large main chunk (>~900KB): next lever is route-level React.lazy, not
+   manualChunks.
+Verify: npm run build output shows expected chunk names/sizes.
+
+================================================================================
+SKILL 11: Update project documentation with the code
+================================================================================
+1. Feature changes must be reflected in projectPRD.txt (modules, endpoints,
+   socket events, models sections as applicable).
+2. New durable pitfalls or conventions go into ProjectMemory.txt section 6/5.
+3. New repeatable procedures get a SKILL entry here.
+4. Keep ASCII-only section separators to match existing file style.
+Verify: docs describe what the code actually does — read the code to confirm,
+never document intent that was not implemented.

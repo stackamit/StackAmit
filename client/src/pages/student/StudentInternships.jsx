@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiSearch, FiBriefcase, FiRefreshCw, FiClock, FiMapPin, FiUsers } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const StudentInternships = () => {
   const [internships, setInternships] = useState([]);
@@ -35,7 +36,7 @@ const StudentInternships = () => {
     if (!window.confirm('Apply for this internship?')) return;
     setApplying(internshipId);
     try { await api.post('/applications/apply', { internshipId }); fetchMyApplications(); }
-    catch (err) { alert(err.response?.data?.message || 'Failed to apply'); }
+    catch (err) { toast.error(err.response?.data?.message || 'Failed to apply'); }
     finally { setApplying(null); }
   };
 

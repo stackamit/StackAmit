@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FiSave, FiUpload, FiRefreshCw, FiCheck, FiAlertCircle } from 'react-icons/fi';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const StudentProfile = () => {
   const { user, setUser } = useAuth();
@@ -64,7 +65,7 @@ const StudentProfile = () => {
       }
       setMessage({ type: 'success', text: 'Avatar uploaded!' });
       setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-    } catch (err) { alert('Failed to upload avatar'); }
+    } catch (err) { toast.error('Failed to upload avatar'); }
   };
 
   if (loading) return <div className="flex items-center justify-center py-12"><FiRefreshCw size={24} className="animate-spin text-primary-500" /></div>;

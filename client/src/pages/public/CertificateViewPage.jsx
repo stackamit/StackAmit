@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   FiAward, FiDownload, FiShare2, FiCheckCircle, FiXCircle,
   FiExternalLink, FiHash, FiUser, FiBriefcase, FiClock,
-  FiCalendar, FiCopy, FiCheck, FiSquare, FiAlertTriangle,
+  FiCalendar, FiCopy, FiCheck, FiSquare, FiAlertTriangle, FiLink,
 } from 'react-icons/fi';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
@@ -78,16 +78,22 @@ const CertificateViewPage = () => {
   };
 
   // Social sharing
+  // Build links from the current browser origin so the public share link
+  // works correctly on localhost during development AND on the deployed domain.
   const cert = certificate?.certificate;
-  const verificationUrl = certificate?.verificationUrl || '';
+  const appOrigin = window.location.origin;
+  const publicLink = cert ? `${appOrigin}/certificate/${cert._id || id}` : '';
+  const verificationUrl = cert
+    ? `${appOrigin}/verify-certificate?certificateNumber=${cert.certificateNumber}`
+    : (certificate?.verificationUrl || '');
   const shareText = cert
-    ? `I've earned a ${typeConfig[cert.type]?.label || cert.type} Certificate from StackAmit for completing "${cert.internshipTitle}"! Verify: ${verificationUrl}`
+    ? `I've earned a ${typeConfig[cert.type]?.label || cert.type} Certificate from StackAmit for completing "${cert.internshipTitle}"! View it here: ${publicLink}`
     : '';
 
   const shareLinks = {
-    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(verificationUrl)}`,
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(publicLink)}`,
     twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(verificationUrl)}&quote=${encodeURIComponent(shareText)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(publicLink)}&quote=${encodeURIComponent(shareText)}`,
     whatsapp: `https://wa.me/?text=${encodeURIComponent(shareText)}`,
   };
 
@@ -165,6 +171,10 @@ const CertificateViewPage = () => {
                     Share on WhatsApp
                   </a>
                   <hr className="border-dark-200 dark:border-dark-700" />
+                  <button onClick={() => { copyToClipboard(publicLink, 'public-url'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors text-sm w-full text-left">
+                    {copied === 'public-url' ? <FiCheck size={18} className="text-green-500" /> : <FiLink size={18} className="text-dark-400" />}
+                    {copied === 'public-url' ? 'Link Copied!' : 'Copy Public Certificate Link'}
+                  </button>
                   <button onClick={() => { copyToClipboard(verificationUrl, 'url'); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors text-sm w-full text-left">
                     {copied === 'url' ? <FiCheck size={18} className="text-green-500" /> : <FiCopy size={18} className="text-dark-400" />}
                     {copied === 'url' ? 'Link Copied!' : 'Copy Verification Link'}
@@ -351,6 +361,9 @@ const CertificateViewPage = () => {
             </h3>
             <p className="text-sm text-dark-500 dark:text-dark-400 mb-4">Share your certificate with your professional network</p>
             <div className="flex flex-wrap gap-3">
+              <button onClick={() => copyToClipboard(publicLink, 'inline-link')} className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium">
+                {copied === 'inline-link' ? <><FiCheck size={16} /> Link Copied!</> : <><FiLink size={16} /> Copy Public Link</>}
+              </button>
               <a href={shareLinks.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2.5 bg-[#0077B5] text-white rounded-lg hover:opacity-90 transition-opacity text-sm font-medium">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
                 LinkedIn

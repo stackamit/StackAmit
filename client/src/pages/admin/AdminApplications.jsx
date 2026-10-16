@@ -5,6 +5,7 @@ import {
   FiChevronDown, FiFilter, FiFileText,
 } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AdminApplications = () => {
   const [applications, setApplications] = useState([]);
@@ -60,7 +61,7 @@ const AdminApplications = () => {
       setSelectedTrainer('');
       fetchApplications();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to approve');
+      toast.error(err.response?.data?.message || 'Failed to approve');
     } finally { setProcessing(false); }
   };
 
@@ -75,7 +76,7 @@ const AdminApplications = () => {
       setRejectNotes('');
       fetchApplications();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to reject');
+      toast.error(err.response?.data?.message || 'Failed to reject');
     } finally { setProcessing(false); }
   };
 
@@ -86,7 +87,7 @@ const AdminApplications = () => {
       await api.patch(`/applications/${app._id}/complete`);
       fetchApplications();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to mark as completed');
+      toast.error(err.response?.data?.message || 'Failed to mark as completed');
     } finally { setProcessing(false); }
   };
 

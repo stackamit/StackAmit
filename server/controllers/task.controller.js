@@ -250,6 +250,13 @@ export const submitTask = asyncHandler(async (req, res) => {
 export const reviewSubmission = asyncHandler(async (req, res) => {
   const { status, marks, reviewNotes } = req.body;
 
+  if (!['approved', 'rejected', 'resubmission_requested'].includes(status)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid review status. Allowed: approved, rejected, resubmission_requested',
+    });
+  }
+
   const submission = await Submission.findById(req.params.id).populate('taskId');
   if (!submission) {
     return res.status(404).json({ success: false, message: 'Submission not found' });

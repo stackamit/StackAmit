@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   FiRefreshCw, FiClock, FiCheckCircle, FiXCircle, FiFileText,
   FiBriefcase, FiCalendar, FiArrowRight, FiExternalLink,
-  FiAlertCircle, FiChevronRight, FiUsers,
+  FiAlertCircle, FiChevronRight, FiUsers, FiAward,
 } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
@@ -19,7 +19,6 @@ const StudentApplications = () => {
     setError(null);
     try {
       const { data } = await api.get('/applications/my');
-      console.log('[MyApplications] API response:', JSON.stringify(data, null, 2));
       setApplications(data?.data?.applications || []);
     } catch (err) {
       console.error('[MyApplications] Error fetching applications:', err.response?.status, err.response?.data || err.message);
@@ -46,6 +45,14 @@ const StudentApplications = () => {
       border: 'border-l-green-500',
       icon: <FiCheckCircle size={18} className="text-green-500" />,
       step: 2,
+    },
+    completed: {
+      label: 'Completed',
+      color: 'text-blue-700 dark:text-blue-400',
+      bg: 'bg-blue-100 dark:bg-blue-900/30',
+      border: 'border-l-blue-500',
+      icon: <FiAward size={18} className="text-blue-500" />,
+      step: 3,
     },
     rejected: {
       label: 'Not Selected',
@@ -182,12 +189,12 @@ const StudentApplications = () => {
                           {/* Step 3: Decision */}
                           <div className="flex items-center">
                             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                              app.status === 'approved' ? 'bg-green-500 text-white' : app.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-dark-200 dark:bg-dark-700 text-dark-500'
+                              app.status === 'completed' ? 'bg-blue-500 text-white' : app.status === 'approved' ? 'bg-green-500 text-white' : app.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-dark-200 dark:bg-dark-700 text-dark-500'
                             }`}>
-                              {app.status === 'approved' ? <FiCheckCircle size={14} /> : app.status === 'rejected' ? <FiXCircle size={14} /> : <FiChevronRight size={14} />}
+                              {app.status === 'approved' || app.status === 'completed' ? <FiCheckCircle size={14} /> : app.status === 'rejected' ? <FiXCircle size={14} /> : <FiChevronRight size={14} />}
                             </div>
                             <span className="text-xs font-medium ml-1.5 text-dark-600 dark:text-dark-400">
-                              {app.status === 'approved' ? 'Accepted' : app.status === 'rejected' ? 'Rejected' : 'Decision'}
+                              {app.status === 'completed' ? 'Completed' : app.status === 'approved' ? 'Accepted' : app.status === 'rejected' ? 'Rejected' : 'Decision'}
                             </span>
                           </div>
                         </div>

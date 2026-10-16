@@ -1,0 +1,103 @@
+================================================================================
+              AGENT
+              StackAmit | Operating Rules & Workflow for AI Coding Agents
+================================================================================
+
+This file defines HOW an agent must work on the StackAmit repository.
+Read context.txt and ProjectMemory.txt first; this file governs behavior.
+
+================================================================================
+1. PRIME DIRECTIVE
+================================================================================
+StackAmit is LIVE in production. Your changes must be correct on the first
+delivery. When in doubt, investigate more — never guess and ship.
+Safety order: (1) do not break what works, (2) fulfill the request,
+(3) keep docs in sync, (4) only then consider improvements.
+
+================================================================================
+2. LOAD SEQUENCE (start of every session)
+================================================================================
+1. context.txt      - what the site is, topology, current state, constraints
+2. ProjectMemory.txt- tech facts, key file map, conventions, pitfalls
+3. skills.txt       - playbooks matching the requested task
+4. projectPRD.txt   - only the sections relevant to the request
+5. The actual code  - code always wins over docs; verify before editing
+
+================================================================================
+3. OPERATING RULES
+================================================================================
+R1. Read before write. Never edit a file you have not read in this session.
+R2. Smallest safe change. Touch only files the request requires; no drive-by
+    refactors, no reformatting unrelated code, no dependency additions
+    without explicit need and user awareness.
+R3. Match house style: functional React components + hooks, Tailwind classes
+    with dark: variants, react-icons/feather icons, react-hot-toast feedback,
+    { success, data, message } API response shape, controller-per-resource
+    organization, ESM imports everywhere.
+R4. Role safety: every new endpoint gets authenticate + authorize(roles);
+    every public endpoint returns display-safe data only (no emails or
+    personal fields on certificate/article/internship public views).
+R5. Enum discipline: any status/enum value assigned in a controller MUST
+    exist in the Mongoose model enum in the same change.
+R6. Cache discipline: new GET flows go through client/src/services/api.js;
+    never cache blob/download responses; invalidate resources on mutations.
+R7. URL discipline: user-facing share/verify links come from
+    window.location.origin (client) or CLIENT_URL env (server) — never a
+    hardcoded host.
+R8. Auth discipline: do not alter token expiry, cookie flags, or the
+    refresh-token contract; those are load-bearing for every logged-in user.
+R9. PowerShell reality: use ';' not '&&'; if npm is blocked, invoke
+    & "C:\Program Files\nodejs\npm.cmd"; copy files with Copy-Item.
+R10. Secrets: never read, print, commit, or modify real values in .env files;
+    reference variable names only.
+R11. No production actions from agent sessions: no server restarts, no
+    Netlify deploys, no database operations against Atlas beyond what local
+    dev runs naturally perform. State deploy requirements in the handoff.
+R12. Clean footprint: delete temporary smoke-test scripts after use; leave
+    no console noise or stray files.
+
+================================================================================
+4. STANDARD WORKFLOW
+================================================================================
+1. Classify the request (bugfix / feature / perf / UI / config) and pick the
+   matching playbook from skills.txt.
+2. Locate all involved files (search codebase; check route -> controller ->
+   model chains and their client consumers) before planning edits.
+3. Plan the change list; for multi-file features keep a todo list and work
+   it to completion.
+4. Implement in dependency order (models -> controllers/routes -> services ->
+   client services -> pages/components).
+5. Verify (mandatory gate before reporting done):
+   - cd client; production build passes (npm.cmd run build, exit 0)
+   - node --check on every touched server file
+   - service/PDF changes: temporary smoke script, then delete it
+   - self-review each diff for accidental edits and omitted callers
+6. Sync docs: projectPRD.txt sections for behavior changes;
+   ProjectMemory.txt for new pitfalls; skills.txt for new procedures.
+7. Handoff report: what changed (per file), why, verification evidence, and
+   explicit deploy notes (e.g., "backend redeploy required", "assets must
+   ship", "no data migration needed").
+
+================================================================================
+5. INTERACTION POLICY
+================================================================================
+- Ambiguity that can break production (schema changes, auth changes, rate
+  limits, deletion semantics) -> ask the user before acting.
+- Ambiguity that is cosmetic or internal -> choose the option consistent with
+  existing code and note the choice in the handoff.
+- Multiple valid approaches with real trade-offs -> present 2-3 options with
+  a recommendation, do not silently pick exotic ones.
+- If a request conflicts with a known pitfall in ProjectMemory.txt, say so
+  explicitly before proceeding.
+- Report failures honestly; never present unverified work as complete.
+
+================================================================================
+6. DEFINITION OF DONE
+================================================================================
+[x] Requested behavior implemented and matches what the user asked
+[x] Production build of the client succeeds
+[x] node --check clean on all touched server files
+[x] No regression in adjacent flows you identified while reading callers
+[x] No temp files, secrets, or debug code left behind
+[x] Docs (PRD / Memory / Skills) updated where behavior changed
+[x] Handoff includes verification evidence and deploy notes

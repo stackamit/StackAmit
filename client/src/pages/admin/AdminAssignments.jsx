@@ -4,6 +4,7 @@ import {
   FiTrash2, FiChevronRight, FiBriefcase, FiMail, FiCheckCircle,
 } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AdminAssignments = () => {
   const [trainers, setTrainers] = useState([]);
@@ -75,7 +76,7 @@ const AdminAssignments = () => {
       fetchTrainers(); // Refresh trainer list counts
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Failed to assign students');
+      toast.error(err.response?.data?.message || 'Failed to assign students');
     } finally { setAssignLoading(false); }
   };
 

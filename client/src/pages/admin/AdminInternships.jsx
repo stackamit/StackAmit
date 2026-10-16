@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { FiSearch, FiPlus, FiRefreshCw, FiMoreVertical, FiTrash2, FiLock, FiBriefcase, FiEye } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AdminInternships = () => {
   const [search, setSearch] = useState('');
@@ -71,7 +72,7 @@ const AdminInternships = () => {
       await api.post('/internships', payload);
       setShowCreate(false); setForm({ title: '', description: '', category: 'Web Development', duration: { weeks: 8, hoursPerWeek: 20 }, seats: { total: 10 }, deadline: '', startDate: '', endDate: '', eligibility: '', skills: '' });
       await fetchInternships(1, 20); await fetchStats();
-    } catch (err) { alert(err.response?.data?.message || 'Failed to create'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to create'); }
     finally { setSaving(false); }
   };
 

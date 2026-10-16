@@ -6,6 +6,7 @@ import {
   FiCalendar, FiFlag,
 } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const TrainerTasks = () => {
   const [tasks, setTasks] = useState([]);
@@ -47,7 +48,7 @@ const TrainerTasks = () => {
   const handleCreate = async (e) => {
     e.preventDefault(); setSaving(true);
     try { await api.post('/tasks', form); setShowCreate(false); setForm({ title: '', description: '', assignedTo: '', dueDate: '', priority: 'medium', instructions: '' }); fetchTasks(); }
-    catch (err) { alert(err.response?.data?.message || 'Failed to create'); }
+    catch (err) { toast.error(err.response?.data?.message || 'Failed to create'); }
     finally { setSaving(false); }
   };
 
@@ -80,11 +81,12 @@ const TrainerTasks = () => {
     setReviewing(true);
     try {
       await api.patch(`/tasks/submissions/${taskDetail.submission._id}/review`, reviewForm);
+      toast.success(`Submission ${reviewForm.status === 'approved' ? 'approved' : reviewForm.status === 'rejected' ? 'rejected' : 'returned for resubmission'}`);
       // Refresh detail
       const { data } = await api.get(`/tasks/${selectedTask._id}`);
       setTaskDetail(data.data);
       fetchTasks();
-    } catch (err) { alert(err.response?.data?.message || 'Failed to review'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to review'); }
     finally { setReviewing(false); }
   };
 

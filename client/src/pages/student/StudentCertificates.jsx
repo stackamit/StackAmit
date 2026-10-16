@@ -47,6 +47,29 @@ const StudentCertificates = () => {
   };
 
   const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  // Share the certificate's public view link.
+  // Built from window.location.origin so it is correct on localhost and on the deployed domain.
+  const handleShare = async (c) => {
+    const publicLink = `${window.location.origin}/certificate/${c._id}`;
+    const shareData = {
+      title: 'StackAmit Certificate',
+      text: `My ${c.type} certificate for "${c.internshipTitle}" from StackAmit`,
+      url: publicLink,
+    };
+    // Prefer the native share sheet (mobile browsers)
+    if (navigator.share) {
+      try { await navigator.share(shareData); return; }
+      catch (err) { if (err.name === 'AbortError') return; }
+    }
+    // Fallback: copy the public link to clipboard
+    try {
+      await navigator.clipboard.writeText(publicLink);
+      toast.success('Public certificate link copied!');
+    } catch {
+      toast(`Certificate link: ${publicLink}`);
+    }
+  };
   const typeColor = (t) => ({ completion: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', participation: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', merit: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' }[t] || '');
 
   return (
@@ -94,9 +117,9 @@ const StudentCertificates = () => {
                   <button onClick={() => handleDownload(c)} disabled={downloadingId === c._id} className="flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium disabled:opacity-50">
                     {downloadingId === c._id ? <FiRefreshCw size={14} className="animate-spin" /> : <FiDownload size={14} />} PDF
                   </button>
-                  <Link to={`/certificate/${c._id}`} className="flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium">
-                    <FiShare2 size={14} />
-                  </Link>
+                  <button onClick={() => handleShare(c)} title="Copy public certificate link" className="flex items-center justify-center gap-1.5 px-3 py-2 bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors text-xs font-medium">
+                    <FiShare2 size={14} /> Share
+                  </button>
                 </div>
               )}
             </div>

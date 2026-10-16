@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import {
-  FiArrowLeft, FiSave, FiUploadCloud, FiX, FiImage, FiBookOpen,
+  FiArrowLeft, FiSave, FiUploadCloud, FiX, FiImage, FiBookOpen, FiLink,
 } from 'react-icons/fi';
 
 const ARTICLE_TYPES = [
@@ -36,6 +36,13 @@ const ArticleEditorPage = () => {
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(''); // 'draft' | 'publish'
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Inline content image insertion state
+  const contentRef = useRef(null);
+  const [showImagePanel, setShowImagePanel] = useState(false);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageAlt, setImageAlt] = useState('');
+  const [uploadingContentImage, setUploadingContentImage] = useState(false);
 
   const listPath = `/${user?.role || 'student'}/articles`;
 
@@ -107,6 +114,78 @@ const ArticleEditorPage = () => {
 
   const removeCover = () => {
     setForm((f) => ({ ...f, coverImage: null }));
+  };
+
+  // Insert a Markdown image at the cursor of the content textarea,
+  // kept on its own line so the article renderer shows it as a figure.
+  const insertImageMarkdown = (url, alt) => {
+    const snippet = `![${(alt || '').trim() || 'image'}](${url})`;
+    const ref = contentRef.current;
+    const current = form.content;
+    const start = ref ? ref.selectionStart : current.length;
+    const end = ref ? ref.selectionEnd : current.length;
+    const before = current.slice(0, start);
+    const after = current.slice(end);
+    const prefix = before && !before.endsWith('\n') ? '\n' : '';
+    const suffix = after && !after.startsWith('\n') ? '\n' : '';
+    const inserted = `${prefix}${snippet}${suffix}`;
+    setForm((f) => ({ ...f, content: before + inserted + after }));
+    const caret = (before + inserted).length;
+    requestAnimationFrame(() => {
+      if (ref) { ref.focus(); ref.setSelectionRange(caret, caret); }
+    });
+  };
+
+  const handleInsertImageUrl = () => {
+    const url = imageUrl.trim();
+    if (!url) {
+      toast.error('Enter an image URL first');
+      return;
+    }
+    if (!/^(https?:\/\/\S+|\/\S*)$/i.test(url)) {
+      toast.error('Image URL must start with http(s):// or /');
+      return;
+    }
+    insertImageMarkdown(url, imageAlt);
+    setImageUrl('');
+    setImageAlt('');
+    setShowImagePanel(false);
+    toast.success('Image inserted into content');
+  };
+
+  const handleContentImageUpload = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file (PNG/JPG/WebP/GIF)');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be smaller than 5MB');
+      return;
+    }
+
+    setUploadingContentImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'articles');
+      const { data } = await api.post('/upload/image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (data.data?.url) {
+        insertImageMarkdown(data.data.url, file.name.replace(/\.[^.]+$/, ''));
+        setShowImagePanel(false);
+        toast.success('Image uploaded and inserted');
+      } else {
+        toast.error('Upload failed, please try again');
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to upload image');
+    } finally {
+      setUploadingContentImage(false);
+    }
   };
 
   const validate = () => {
@@ -294,21 +373,86 @@ const ArticleEditorPage = () => {
 
         {/* Content */}
         <div>
-          <label htmlFor="content" className="block text-sm font-semibold text-dark-900 dark:text-white mb-1.5">
-            Content <span className="text-red-500">*</span>
-          </label>
+          <div className="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
+            <label htmlFor="content" className="text-sm font-semibold text-dark-900 dark:text-white">
+              Content <span className="text-red-500">*</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowImagePanel((v) => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                showImagePanel
+                  ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-400'
+                  : 'border-dark-200 dark:border-dark-700 text-dark-600 dark:text-dark-300 hover:border-primary-400 dark:hover:border-primary-600'
+              }`}
+            >
+              <FiImage size={14} /> Insert Image
+            </button>
+          </div>
+
+          {/* Image insertion panel: paste a URL or upload a PNG/image */}
+          {showImagePanel && (
+            <div className="mb-3 p-4 rounded-xl border border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800/50 space-y-3">
+              <p className="text-xs font-medium text-dark-600 dark:text-dark-300">
+                Add an image inside your article — paste an image URL or upload a PNG/image file.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleInsertImageUrl(); } }}
+                  placeholder="Image URL (https://...)"
+                  className="input-field w-full text-sm"
+                />
+                <input
+                  type="text"
+                  value={imageAlt}
+                  onChange={(e) => setImageAlt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleInsertImageUrl(); } }}
+                  placeholder="Caption / alt text (optional)"
+                  className="input-field w-full text-sm"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleInsertImageUrl}
+                  disabled={!imageUrl.trim()}
+                  className="btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50"
+                >
+                  <FiLink size={14} /> Insert Image URL
+                </button>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-colors ${
+                  uploadingContentImage
+                    ? 'border-dark-200 dark:border-dark-700 text-dark-400 cursor-wait'
+                    : 'border-dark-200 dark:border-dark-700 text-dark-600 dark:text-dark-300 hover:border-primary-400 dark:hover:border-primary-600'
+                }`}>
+                  {uploadingContentImage ? (
+                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-primary-600 border-t-transparent"></span>
+                  ) : (
+                    <FiUploadCloud size={14} />
+                  )}
+                  {uploadingContentImage ? 'Uploading...' : 'Upload PNG / Image'}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleContentImageUpload} disabled={uploadingContentImage} className="hidden" />
+                </label>
+              </div>
+            </div>
+          )}
+
           <textarea
             id="content"
             name="content"
+            ref={contentRef}
             value={form.content}
             onChange={handleChange}
             rows={16}
-            placeholder={'Write your article here...\n\nMarkdown is supported:\n# Heading 1\n## Heading 2\n**bold text**, *italic*, `inline code`\n- bullet list\n1. numbered list\n> quote\n```code block```'}
+            placeholder={'Write your article here...\n\nMarkdown is supported:\n# Heading 1\n## Heading 2\n**bold text**, *italic*, `inline code`\n- bullet list\n1. numbered list\n> quote\n```code block```\n![caption](https://example.com/image.png)  ← image (or use Insert Image)'}
             className="input-field w-full resize-y font-mono text-sm leading-relaxed"
           />
           <p className="mt-1.5 text-xs text-dark-400">
             <FiBookOpen size={11} className="inline mr-1" />
-            Markdown supported: headings, lists, bold, italic, code blocks, quotes and links.
+            Markdown supported: headings, lists, bold, italic, code blocks, quotes, links and images (![caption](image-url)).
           </p>
         </div>
 

@@ -21,7 +21,7 @@ const getAuthorName = (a) =>
   a?.author?.name || `${a?.author?.firstName || ''} ${a?.author?.lastName || ''}`.trim() || 'Anonymous';
 
 // ─── Safe inline Markdown renderer (React nodes only — no HTML injection) ────
-const INLINE_RE = /\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|`([^`\n]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g;
+const INLINE_RE = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|`([^`\n]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g;
 
 const renderInline = (text, keyBase = 'i') => {
   if (!text) return null;
@@ -34,23 +34,29 @@ const renderInline = (text, keyBase = 'i') => {
     if (start > lastIdx) elements.push(String(text).slice(lastIdx, start));
     const token = m[0];
 
-    if (token.startsWith('**')) {
-      elements.push(<strong key={`${keyBase}-${idx++}`} className="font-bold">{m[1]}</strong>);
+    if (token.startsWith('![')) {
+      elements.push(
+        <img key={`${keyBase}-${idx++}`} src={m[2]} alt={m[1] || 'Article image'}
+          loading="lazy"
+          className="inline-block max-w-full rounded-lg my-2 border border-dark-200 dark:border-dark-700" />
+      );
+    } else if (token.startsWith('**')) {
+      elements.push(<strong key={`${keyBase}-${idx++}`} className="font-bold">{m[3]}</strong>);
     } else if (token.startsWith('`')) {
       elements.push(
         <code key={`${keyBase}-${idx++}`} className="px-1.5 py-0.5 rounded bg-dark-100 dark:bg-dark-700 text-primary-700 dark:text-primary-400 text-sm font-mono">
-          {m[3]}
+          {m[5]}
         </code>
       );
     } else if (token.startsWith('[')) {
       elements.push(
-        <a key={`${keyBase}-${idx++}`} href={m[5]} target="_blank" rel="noopener noreferrer"
+        <a key={`${keyBase}-${idx++}`} href={m[7]} target="_blank" rel="noopener noreferrer"
           className="text-primary-600 dark:text-primary-400 hover:underline">
-          {m[4]}
+          {m[6]}
         </a>
       );
     } else {
-      elements.push(<em key={`${keyBase}-${idx++}`} className="italic">{m[2]}</em>);
+      elements.push(<em key={`${keyBase}-${idx++}`} className="italic">{m[4]}</em>);
     }
     lastIdx = start + token.length;
   }
@@ -59,7 +65,7 @@ const renderInline = (text, keyBase = 'i') => {
 };
 
 // ─── Block-level Markdown renderer ───────────────────────────────────────────
-const SPECIAL_LINE = /^(#{1,3}\s|>\s?|\s*[-*+]\s|\s*\d+\.\s|```|(-{3,}|_{3,})\s*$)/;
+const SPECIAL_LINE = /^(#{1,3}\s|>|\s*[-*+]\s|\s*\d+\.\s|```|!\[|(-{3,}|_{3,})\s*$)/;
 
 const renderContent = (content) => {
   const blocks = [];
@@ -93,6 +99,22 @@ const renderContent = (content) => {
     // Horizontal rule
     if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line.trim())) {
       blocks.push(<hr key={key++} className="my-8 border-dark-200 dark:border-dark-700" />);
+      i++;
+      continue;
+    }
+
+    // Standalone image block: ![alt](url) on its own line
+    const imgBlock = line.trim().match(/^!\[([^\]]*)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)$/);
+    if (imgBlock) {
+      blocks.push(
+        <figure key={key++} className="my-6 flex flex-col items-center">
+          <img src={imgBlock[2]} alt={imgBlock[1] || 'Article image'} loading="lazy"
+            className="max-w-full h-auto rounded-xl border border-dark-200 dark:border-dark-700 shadow-sm" />
+          {imgBlock[1] && (
+            <figcaption className="mt-2 text-xs text-dark-500 dark:text-dark-400 italic">{imgBlock[1]}</figcaption>
+          )}
+        </figure>
+      );
       i++;
       continue;
     }

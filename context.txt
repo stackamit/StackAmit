@@ -1,0 +1,118 @@
+================================================================================
+              CONTEXT
+              StackAmit | Working Context Briefing for AI Agents
+================================================================================
+
+Purpose of this file: give an agent the minimum situational awareness to work
+effectively in this repository from the very first message — what the website
+is, how it is wired together, where things live, and what constraints apply.
+
+================================================================================
+1. THE WEBSITE IN ONE PARAGRAPH
+================================================================================
+StackAmit (https://stackamit.netlify.app) is an AI-powered learning /
+internship management platform. Students register (email OTP), browse and
+apply to internships; on approval they receive a signed offer-letter PDF by
+email; trainers mentor assigned students, assign and grade tasks; completed
+internships yield QR-verifiable certificate PDFs with public share pages.
+Admins run the whole system: internships, trainers, applications (including
+"Mark Completed"), assignments, certificates, articles moderation, feedback
+replies, settings, reports. Everyone gets real-time WhatsApp-style chat and
+instant notifications. Public visitors see the marketing site, internships,
+blog articles, contact/feedback, and certificate verification.
+
+================================================================================
+2. SYSTEM TOPOLOGY
+================================================================================
+Browser
+  |  HTTPS (Netlify CDN, immutable /assets/* headers)
+  v
+React SPA (client/, Vite 6, port 5173 in dev)
+  |  Axios /api calls (JWT access token; auto refresh via httpOnly cookie)
+  |  Socket.io WebSocket (chat + notifications, JWT-authenticated)
+  v
+Express API (server/, port 5000)
+  |-- Mongoose 8  --> MongoDB Atlas
+  |-- Cloudinary  --> uploaded files (avatars, resumes, chat attachments)
+  |-- SendGrid    --> OTP / welcome / offer letter / certificate emails
+  |-- PDFKit      --> offer letters (signed) + certificates (QR)
+  |-- Rate limiters --> general 1000/15min, auth 100 failed/15min
+  v
+Activity logs + notifications persisted in Mongo, pushed over sockets
+
+Browser-side performance layer (recent addition):
+- localStorage API response cache (sa_api_* keys, per-user, TTL 2-10 min,
+  auto-invalidated by mutations, blob downloads bypass)
+- persisted public site settings (12h TTL)
+- Vite vendor chunk splitting so library code survives deploys in cache
+
+================================================================================
+3. USER JOURNEYS THAT DEFINE THE CODE
+================================================================================
+Student : register -> verify OTP -> browse -> apply -> approved -> offer
+          letter email/download -> chat with trainer -> tasks/submissions ->
+          completion -> certificate -> public share link -> (re-apply free)
+Trainer : admin-created account -> forced password change -> view assigned
+          students -> create/assign tasks -> review submissions (marks,
+          status) -> chat -> issue certificate
+Admin   : seeded admin login -> internships CRUD+publish -> trainers CRUD
+          (welcome email) -> assign students (capacity enforced) -> approve
+          applications (offer letter) -> mark completed -> certificates
+          (issue/revoke/resend) -> articles -> feedback replies -> settings
+          -> reports/Excel export
+Public  : home -> internships -> apply CTA -> articles -> verify certificate
+          (number or QR scan) -> /certificate/:id share page -> contact
+
+================================================================================
+4. CURRENT STATE AND RECENT HISTORY (October 2026)
+================================================================================
+- Deployed and LIVE. Latest delivered batch of six updates (all implemented
+  and verified via production build + server syntax checks + PDF smoke test):
+  1. Certificate public share links use window.location.origin (works on
+     localhost and production) + native share sheet with clipboard fallback.
+  2. Offer letter PDFs embed the authorized signature
+     (server/assets/signature.png) above the signature line, with graceful
+     fallback and page-bottom clamping.
+  3. "Mark Completed" fixed — Application.status enum now includes
+     'completed' (root cause: controller assigned a value missing from enum).
+  4. Load-time work — localStorage API response cache, persisted site
+     settings, Netlify immutable asset headers, Vite manualChunks
+     (main chunk ~1.6MB -> ~880KB).
+  5. Discussion pages redesigned WhatsApp/Telegram-style (ChatPanel rewrite:
+     doodle background, bubbles with tails, grouping, Today/Yesterday chips,
+     blue double-check receipts, scroll FAB, pill composer, mobile
+     list<->chat switching, live previews + unread badges on list pages).
+  6. Rate limiters split: general (1000/15min, skips auth+health) vs auth
+     (100 failed/15min, skipSuccessfulRequests) with refresh-token exempt —
+     ended the 429/token-problem reports.
+- Open improvement candidates (NOT started, confirm before doing):
+  route-level React.lazy for the remaining ~880KB main chunk; signature on
+  certificates; chat message reactions; bulk certificate generation.
+
+================================================================================
+5. CONSTRAINTS EVERY AGENT MUST RESPECT
+================================================================================
+- Production live: no breaking changes, no experimental rewrites of working
+  flows, no touching .env values or secrets, no dropping/rename-creating
+  collections, additive-only database changes.
+- All auth flows go through the JWT access+refresh design; do not add a
+  second axios instance that bypasses client/src/services/api.js.
+- Do not restart or deploy the production backend from an agent session;
+  deliver verified code and note deploy requirements instead.
+- Keep role-based scoping on every new endpoint (authorize(...)) and never
+  leak personal data through public certificate/article/internship responses.
+- Windows PowerShell environment: ';' not '&&'; npm.cmd workaround if the
+  ps1 shim is blocked.
+- Verification baseline for any change: client production build succeeds and
+  node --check passes on touched server files.
+
+================================================================================
+6. DOCUMENT SET IN THIS REPO
+================================================================================
+- projectPRD.txt     : full product requirements (v2.0) — features, models,
+                       endpoints, socket events, security, roadmap
+- ProjectMemory.txt  : durable facts, key file map, conventions, pitfalls
+- skills.txt         : step-by-step playbooks for common tasks
+- context.txt        : this briefing (situational awareness)
+- agent.txt          : agent operating rules and workflow
+- README.md          : human-facing project introduction

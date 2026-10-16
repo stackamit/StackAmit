@@ -1,0 +1,156 @@
+================================================================================
+              PROJECT MEMORY
+              StackAmit | Long-Term Project Knowledge for AI Agents
+================================================================================
+
+This file stores durable facts, conventions, and known pitfalls about the
+StackAmit codebase. Agents should load this before working in the repository
+and treat it as a supplement to (not a replacement for) the current code.
+
+================================================================================
+1. WHAT THIS PROJECT IS
+================================================================================
+- StackAmit (formerly Skill-Portal): a MERN Internship Management System.
+- LIVE in production — never break existing behavior; every change must be
+  backward compatible or explicitly verified.
+- Three authenticated roles: Admin, Trainer, Student + Public (unauthenticated)
+  pages (home, internships, articles, certificate verify/view, contact/feedback).
+- Full feature spec lives in projectPRD.txt (v2.0, October 2026).
+
+================================================================================
+2. TECHNOLOGY FACTS
+================================================================================
+- Frontend : React 18 + Vite 6, React Router DOM 7, Tailwind CSS 3,
+             Redux Toolkit (UI only), React Context (Auth + Socket),
+             Axios, Framer Motion, react-icons (Feather), emoji-picker-react,
+             react-hot-toast, Recharts, qrcode.react / html5-qrcode
+- Backend  : Node.js ES Modules ("type": "module"), Express 4,
+             Mongoose 8 (discriminator model User -> Admin/Trainer/Student),
+             Socket.io 4, JWT (access 15min + refresh 7d in httpOnly cookie),
+             Multer + Cloudinary, SendGrid email, PDFKit (certificates +
+             offer letters), qrcode, ExcelJS, express-validator,
+             express-rate-limit, Helmet, CORS, Morgan, cookie-parser
+- Database : MongoDB Atlas (cloud, replica set with SSL)
+- Hosting  : Frontend on Netlify (stackamit.netlify.app, config in
+             netlify.toml, SPA redirects in client/public/_redirects).
+             Backend is a Node/Express API (port 5000).
+
+================================================================================
+3. RUN / BUILD COMMANDS (Windows PowerShell)
+================================================================================
+- Backend dev : cd server; npm run dev        (nodemon, port 5000)
+- Frontend dev: cd client; npm run dev        (Vite, port 5173)
+- Frontend build check: cd client; npm run build   (use this to verify edits)
+- Seed admin  : cd server; npm run seed
+- IMPORTANT: PowerShell may block npm.ps1 (execution policy). Use instead:
+    & "C:\Program Files\nodejs\npm.cmd" run build
+- PowerShell does NOT support '&&' as a statement separator; use ';'.
+- Syntax-check server files without running them: node --check <file>.js
+
+================================================================================
+4. KEY FILE MAP
+================================================================================
+- e:\StackAmit\server\server.js        - Express entry, rate limiters, CORS,
+                                         route mounting, socket init
+- e:\StackAmit\server\models\User.js   - base model; Admin/Trainer/Student are
+                                         discriminators (model.discriminators)
+- e:\StackAmit\server\models\Application.js - status enum includes 'completed'
+- e:\StackAmit\server\controllers\     - one controller per resource
+- e:\StackAmit\server\services\offerLetter.service.js - PDFKit offer letter,
+                                         embeds server/assets/signature.png
+- e:\StackAmit\server\services\certificate.service.js - PDF + QR certificate
+- e:\StackAmit\server\services\email.service.js        - SendGrid templates
+- e:\StackAmit\server\socket\index.js  - all Socket.io handlers (rooms:
+                                         user:<id>, conversation:<id>)
+- e:\StackAmit\client\src\services\api.js    - Axios instance + token-refresh
+                                         interceptor + cached GET wrapper
+- e:\StackAmit\client\src\services\apiCache.js - localStorage response cache
+                                         (prefix "sa_api_", per-user keys)
+- e:\StackAmit\client\src\components\ChatPanel.jsx - WhatsApp/Telegram-style
+                                         chat UI (shared by student/trainer)
+- e:\StackAmit\client\src\hooks\useSiteSettings.js - public settings fetch +
+                                         12h localStorage persistence
+- e:\StackAmit\client\vite.config.js   - manualChunks vendor splitting
+- e:\StackAmit\netlify.toml            - SPA redirects + cache headers
+- e:\StackAmit\signature\              - source signature images (PNG + SVG);
+                                         PNG is copied to server/assets/
+
+================================================================================
+5. ARCHITECTURE CONVENTIONS
+================================================================================
+- API base: /api on server; client uses VITE_API_URL as Axios baseURL.
+- Route files: server/routes/<resource>.routes.js -> controllers/<resource>
+  .controller.js -> models/<Name>.js. Middleware order: auth, authorize(roles),
+  validator, controller.
+- Roles enforced server-side with authorize('admin','trainer','student').
+- Client pages grouped by role folder: pages/admin, pages/student,
+  pages/trainer, pages/public, pages/shared, pages/auth.
+- Socket.io is best-effort for chat; REST POST /:conversationId/messages is
+  the guaranteed delivery path (ChatPanel falls back to REST).
+- Offer letter and certificate PDFs are generated on demand server-side with
+  PDFKit and streamed/attached; both emailed via SendGrid as attachments.
+- Public share/verify URLs must be built from window.location.origin (never
+  hardcoded hosts) so they work on localhost and production alike.
+- File upload form fields are "file" (single) / "files" (multiple).
+
+================================================================================
+6. KNOWN PITFALLS (HARD-WON LESSONS)
+================================================================================
+6.1 Mongoose enum vs controller status values
+    - Application.status enum was missing 'completed' while the
+      completeInternship controller assigned it -> save() validation error on
+      "Mark Completed". RULE: whenever a controller assigns a new enum value,
+      the model enum must be updated in the same change.
+
+6.2 Rate limiter 429 false positives
+    - Old general limiter (100 req/hour) broke normal SPA usage, and refresh
+      tokens got throttled causing token problems. Current safe setup:
+      general 1000/15min (skips /api/auth/* and /api/health), auth 100 failed
+      req/15min with skipSuccessfulRequests, /auth/refresh-token fully exempt.
+      Use req.originalUrl (not req.url) inside limiter skip predicates.
+
+6.3 localStorage API cache hazards
+    - Binary downloads (api.get with responseType: 'blob') MUST bypass the
+      cache (JSON.stringify of a Blob yields {}). Implemented in api.js.
+    - Cache keys are user-scoped ("sa_api_<userId>::<path>::<params>");
+      invalidation matches resource segment WITH a leading slash and boundary
+      char check to avoid partial-segment false matches.
+    - Payloads > 512KB are not stored; quota errors trigger pruning.
+
+6.4 Relative import depth
+    - Files in client/src/pages/<role>/ are TWO levels below src; imports must
+      be '../../services/api' etc. A single '../' breaks the Vite production
+      build ("Could not resolve"), not the dev server alone.
+
+6.5 PDFKit images
+    - PDFKit supports PNG natively but NOT SVG without extra plugins — use
+      server/assets/signature.png. Resolve asset paths via
+      import.meta.url + fileURLToPath (ESM has no __dirname).
+    - Clamp the image draw position to page height so letters near the page
+      bottom do not throw; wrap doc.image in try/catch with graceful fallback.
+
+6.6 Windows / PowerShell
+    - npm run fails with "npm.ps1 cannot be loaded" (execution policy) —
+      call npm.cmd directly. Copy files with Copy-Item, not 'copy /Y'.
+    - Build via terminal, not GUI; always quote paths with spaces.
+
+6.7 Deployed-site safety
+    - server/assets/ is NOT git-ignored and must ship with backend deploys.
+    - netlify.toml header changes only take effect after a frontend redeploy.
+    - Schema enum additions need no data migration if no document was ever
+      saved with the old invalid value.
+
+================================================================================
+7. CURRENT STATE SNAPSHOT (October 2026)
+================================================================================
+- Production deployed: Netlify frontend + Node backend + MongoDB Atlas.
+- Delivered features: internship lifecycle + applications, offer letter PDF
+  with signature, tasks/submissions, certificates with QR + public share page
+  (/certificate/:id), WhatsApp-style realtime chat, notifications, articles/
+  blog, feedback, admin settings, reports/Excel export, activity logs.
+- Recent performance work: localStorage response cache, persisted site
+  settings (12h TTL), Vite vendor manualChunks (main chunk reduced from
+  ~1.6MB to ~880KB), Netlify immutable asset headers.
+- Verification standard used for recent changes: client production build
+  passes, node --check passes on touched server files, offer-letter PDF
+  smoke-tested (valid %PDF output with signature embedded).

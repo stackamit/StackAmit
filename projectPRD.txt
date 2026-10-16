@@ -3,11 +3,14 @@
               StackAmit | Internship Management System
 ================================================================================
 
-Document Version : 1.0
-Date             : August 2026
-Status           : Active
+Document Version : 2.0
+Date             : October 2026
+Status           : Active (LIVE - Production Deployed)
 Project Name     : StackAmit (formerly Skill-Portal)
 Tagline          : AI-Powered Learning Management
+Deployment       : Frontend: Netlify (stackamit.netlify.app)
+                   Backend: Node.js/Express API (port 5000)
+                   Database: MongoDB Atlas (cloud)
 
 ================================================================================
 1. EXECUTIVE SUMMARY
@@ -20,9 +23,12 @@ certificates, and real-time communication — all under one unified system.
 
 The platform serves three distinct user roles — Admin, Trainer, and Student —
 each with tailored dashboards, workflows, and permissions. It features real-time
-messaging via Socket.io, email notifications via SendGrid, cloud file storage
-via Cloudinary, PDF certificate generation with QR verification, and a dynamic
-public-facing website.
+messaging via Socket.io (WhatsApp/Telegram-style chat), email notifications via
+SendGrid, cloud file storage via Cloudinary, PDF certificate generation with QR
+verification, automated offer letters with an authorized signature image, a
+public articles/blog system, visitor feedback capture, browser-level response
+caching for fast repeat loads, and a dynamic public-facing website.
+The application is deployed and live in production.
 
 ================================================================================
 2. PROJECT OVERVIEW
@@ -75,9 +81,12 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - QR Code        : qrcode.react, html5-qrcode (scanner)
 - Notifications  : react-hot-toast
 - Emoji Picker   : emoji-picker-react
+- Caching        : localStorage API response cache (services/apiCache.js),
+                   persisted site settings (useSiteSettings, 12h TTL)
+- Code Splitting : Vite manualChunks vendor splitting (react, motion,
+                   emoji, icons, socket/axios) for browser-cache friendliness
 
 3.2 Backend
-- Charts         : Recharts
 - Runtime        : Node.js (ES Modules)
 - Framework      : Express.js 4
 - Database       : MongoDB Atlas (Mongoose 8 ODM)
@@ -86,9 +95,11 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - Real-time      : Socket.io 4
 - File Upload    : Multer + Cloudinary
 - Email          : SendGrid (@sendgrid/mail)
-- PDF Generation : PDFKit
+- PDF Generation : PDFKit (certificates + offer letters with embedded
+                   signature image from server/assets/signature.png)
 - QR Code        : qrcode
-- Security       : Helmet, CORS, express-rate-limit, cookie-parser
+- Security       : Helmet, CORS, express-rate-limit (separate general and
+                   authentication limiters), cookie-parser
 - Logging        : Morgan
 - Excel Export   : ExcelJS
 - Unique IDs     : UUID
@@ -98,6 +109,10 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - Database       : MongoDB Atlas (Replica Set with SSL)
 - File Storage   : Cloudinary (images, documents, certificates)
 - Email Service  : SendGrid
+- Frontend Hosting: Netlify (SPA redirects + immutable asset cache headers
+                   via netlify.toml)
+- Static Assets  : server/assets/ (offer letter signature image, deployed
+                   with the API)
 - Development    : Nodemon (auto-restart)
 
 ================================================================================
@@ -105,17 +120,22 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 ================================================================================
 
 4.1 Admin
-- Create and manage trainer accounts (with welcome email)
 - Full system access and control
-- Create, update, close, archive, and delete internships
+- Create, update, close, publish, and delete internships
 - Create and manage trainer accounts (with welcome email)
-- Assign students to trainers (with optional internship mapping)
+- Assign students to trainers (with optional internship mapping);
+  trainer capacity (maxStudents) is enforced during assignment
 - View and manage all student applications (approve/reject)
-- Monitor all conversations and discussions
-- Manage certificates (issue, revoke)
-- Configure system settings (company info, email, security, certificates)
-- View dashboard analytics and reports
-- Export data to Excel
+- Mark approved internships as "Completed" (frees the student to apply
+  again and releases one slot on the assigned trainer's capacity)
+- Manage all offer letters (view, resend email with PDF attachment)
+- Monitor all conversations and discussions (close/mute support)
+- Manage certificates (issue, revoke, resend email with PDF)
+- Moderate published articles (blog system)
+- View and reply to user feedback (contact page + authenticated feedback)
+- Configure system settings (company info, email, security, certificates,
+  social media links including WhatsApp)
+- View dashboard analytics and reports, export data to Excel
 - Receive notifications for all system activities
 
 4.2 Trainer
@@ -130,25 +150,29 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - Receive notifications for task submissions and system events
 
 4.3 Student
-- Receive notifications for task assignments, application updates, certificates
 - Register with email OTP verification
 - Browse and apply for published internships
-- Track application status (pending/approved/rejected/withdrawn)
+- Track application status (pending/approved/rejected/withdrawn/completed)
 - View assigned trainer and internship details
+- View and download Offer Letter (PDF) after approval
 - Complete and submit tasks (file upload, GitHub link, live URL, video demo)
 - Communicate with assigned trainer via real-time chat
-- Download and share earned certificates
+- Download certificates and share the public certificate link
+  (native share sheet on mobile / clipboard copy on desktop)
+- Write and manage articles on the shared blog (draft/published)
 - Manage profile (personal info, education, skills, social links, resume)
-- Receive notifications for task assignments, application updates, certificates
+- Receive notifications for task assignments, application updates,
+  internship completion, and certificates
 
 4.4 Public (Unauthenticated)
 -----------------------------
 - Browse homepage with dynamic content
 - View available internships with category filtering
 - Read about the platform
-- Contact the organization
+- Contact the organization and submit public feedback
+- Browse and read published articles (blog)
 - Verify certificates by certificate number or QR scan
-- View certificate details page
+- View shareable certificate page (/certificate/:id) without login
 
 ================================================================================
 5. CORE FEATURES & MODULES
@@ -175,9 +199,13 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - Internship statuses: Published, Closed, Archived
 - Public browsing with category-based filtering
 - Student application with one-application-per-internship constraint
+- Only one active internship at a time (pending or approved blocks new applications)
 - Admin/Trainer application review (approve/reject with notes)
 - Student can withdraw applications
 - Seat management (total vs. filled count)
+- Admin "Mark Completed" flow: sets application status to completed,
+  clears student's current internship + trainer assignment, frees a trainer
+  capacity slot, and notifies the student in real time
 
 5.3 Task & Submission Workflow
 -------------------------------
@@ -199,15 +227,27 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - Unique certificate number generation (UUID-based)
 - QR code generation for each certificate
 - PDF certificate generation via PDFKit with professional template
-- Certificate types: Completion, Excellence, Participation
+- Authorized signature image centered at the bottom of the certificate
+  (same server/assets/signature.png as the offer letter) with signer name
+  and role beneath the rule; graceful fallback if the image is missing
+- Re-arranged certificate layout: credentials band with Duration,
+  Internship Period, Category and Date of Issue columns; certificate
+  number + verification ID block bottom-left; QR code bottom-right
+- Certificate types: Completion, Participation, Merit
 - Certificate fields: student name, internship title, duration, issue date, issuer
 - Public verification via:
   - Certificate number lookup
   - QR code scan (mobile camera)
   - Direct URL sharing
+- Public shareable certificate view page (/certificate/:id) — no login required,
+  returns only display-safe fields (no personal email/details)
+- Share links built from window.location.origin so they work correctly on
+  localhost during development and on the deployed production domain
+- Native share sheet on mobile, clipboard copy fallback on desktop
 - Certificate revocation with reason tracking
-- Social sharing (WhatsApp, Twitter, LinkedIn, Facebook)
-- Email notification on certificate issuance
+- Social sharing (WhatsApp, Twitter/X, LinkedIn, Facebook)
+- Email notification on certificate issuance with PDF attached
+- Admin resend of certificate email with PDF
 
 5.5 Real-Time Communication (Discussion System)
 -------------------------------------------------
@@ -225,7 +265,17 @@ StackAmit provides an end-to-end internship lifecycle management platform:
   - Unread count tracking
   - Message search
 - Admin can monitor all conversations
-- WhatsApp-style sender identification with role-colored badges
+- WhatsApp/Telegram-style interface:
+  - Chat doodle background, gradient bubbles with tails
+  - Consecutive-message grouping (same sender collapsed)
+  - Sender avatars + role-colored badges
+  - "Today/Yesterday" date chips
+  - Blue double-check read receipts
+  - Floating scroll-to-latest button
+  - Auto-growing pill input with inline emoji picker and attachment
+- Conversation list with last-message previews, relative timestamps,
+  unread count badges, and live updates via socket events
+- Mobile list/chat switching with back button
 
 5.6 Notification System
 ------------------------
@@ -322,6 +372,58 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - Multer middleware for upload handling
 - Type filtering and size limits
 - Generic upload endpoint for flexibility
+- Upload fields are named "file" (single) / "files" (multiple) convention
+
+5.13 Offer Letter System
+-------------------------
+- Generated automatically when an application is approved
+- Professional A4 PDF via PDFKit with branded header, offer details box,
+  candidate information, key skills, and responsibilities
+- Authorized signature image embedded above the signature line
+  (server/assets/signature.png; graceful fallback if image missing)
+- Offer Letter ID and date reference (SA/OFFER/xxxxxxxx)
+- Emailed to the student as a PDF attachment on approval (non-blocking)
+- Student download from dashboard (authenticated blob handling)
+- Admin can view all offer letters and resend the email with PDF
+- Mirrors the certificate PDF/email architecture pattern
+
+5.14 Articles / Blog System
+------------------------------
+- Any authenticated user (student/trainer/admin) can write articles
+- Article fields: title, content, cover image, tags, status (draft/published)
+- Content supports Markdown (headings, lists, bold/italic, code blocks,
+  quotes, links, images)
+- Inline content images: authors insert an image via URL (https:// or
+  site-relative) or by uploading a PNG/JPG/WebP/GIF file (Cloudinary, max
+  5MB); rendered as a captioned figure on the public article page
+- Access control: author manages own articles; public sees published only
+- Public articles list + article view page on the website
+- Shared blog pages: ArticleEditorPage (create/edit), MyArticlesPage (manage)
+- Status update endpoint for publish/unpublish
+
+5.15 Feedback System
+---------------------
+- Public feedback submission (contact/feedback page, no auth required)
+- Authenticated feedback with user attribution
+- Admin panel: list, view, reply, update status, delete, statistics
+- Feedback statuses (new/replied/resolved) with admin reply tracking
+
+5.16 Performance & Browser Caching
+------------------------------------
+- localStorage API response cache for relatively static GET endpoints
+  (internships, articles, certificates, students, trainers, settings) with
+  per-endpoint TTLs (2–10 minutes)
+- Cache keys scoped per logged-in user (no cross-account data leakage)
+- Automatic invalidation on successful mutations (POST/PUT/PATCH/DELETE)
+  for the matching resource; binary/blob downloads bypass the cache
+- Site settings persisted in localStorage (12h expiry) for instant
+  public-page rendering
+- Netlify cache headers: /assets/* immutable (hashed filenames),
+  index.html must-revalidate (users always get fresh deploys)
+- Vite manualChunks vendor splitting: large libraries (react, framer-motion,
+  emoji-picker, icons, socket/axios) cache independently across deploys
+- Rate limiting tuned to prevent 429 false positives during normal
+  dashboard usage (see section 9.2)
 
 ================================================================================
 6. DATABASE MODELS
@@ -371,12 +473,14 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 6.6 Application
 ---------------
 - studentId (ref: Student), internshipId (ref: Internship)
-- status (pending/approved/rejected/withdrawn)
+- status (pending/approved/rejected/withdrawn/completed)
 - appliedDate, reviewedBy (ref: User), reviewedAt, reviewNotes
 - Compound unique index: studentId + internshipId
+- Note: the model enum must include every status a controller assigns;
+  'completed' was added to fix the "Mark Completed" validation error
 
 6.7 Task
-  - Attachments, instructions, total marks
+--------
 - title, description, priority (low/medium/high)
 - assignedBy (ref: User), assignedTo (ref: Student)
 - internshipId (ref: Internship)
@@ -409,7 +513,7 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - relatedId, actionUrl
 
 6.11 Message
-- Internship-scoped conversations (tied to internship + trainer + student)
+------------
 - conversationId (ref: Conversation)
 - sender (ref: User), senderRole
 - content, messageType (TEXT/IMAGE/PDF/DOCUMENT/VIDEO/AUDIO/ZIP/CODE/ANNOUNCEMENT/SYSTEM)
@@ -429,7 +533,7 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - isClosed, mutedBy [ref: User]
 
 6.13 OTP
-- Admin receives notifications for all system activities
+--------
 - userId (ref: User), email, otp
 - purpose (registration/password_reset/email_verification)
 - expiresAt, isUsed
@@ -440,7 +544,7 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - details [Object], ipAddress, userAgent
 
 6.15 Setting
-- Personal info: first name, last name, gender, date of birth
+------------
 - key (unique), value, category
 - isPublic (boolean)
 
@@ -451,6 +555,18 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 - assignedDate, status (active/completed/transferred/removed)
 - progressPercentage, notes
 
+6.17 Article
+-------------
+- author (ref: User), title, content, coverImage
+- tags [String], status (draft/published)
+- Access: public reads published; author controls own drafts
+
+6.18 Feedback
+--------------
+- name, email, message (public) or user (ref: User) (authenticated)
+- rating, status (new/replied/resolved)
+- adminReply, repliedBy (ref: User), repliedAt
+
 ================================================================================
 7. API ENDPOINTS SUMMARY
 ================================================================================
@@ -458,109 +574,164 @@ StackAmit provides an end-to-end internship lifecycle management platform:
 7.1 Authentication (/api/auth)
 -------------------------------
 POST   /register          - Student registration
-POST   /verify-otp        - OTP verification
+POST   /verify-email      - Email OTP verification
+POST   /resend-otp        - Resend OTP
 POST   /login             - User login
 POST   /logout            - User logout
-POST   /refresh-token     - Refresh access token
+POST   /refresh-token     - Refresh access token (never rate limited)
 POST   /forgot-password   - Request password reset
 POST   /reset-password    - Reset password with OTP
 POST   /change-password   - Change password (authenticated)
+GET    /me                - Current user profile
+PUT    /profile           - Update own profile
+POST   /avatar            - Upload own avatar
 
 7.2 Internships (/api/internships)
 -----------------------------------
-GET    /                  - List internships (public, paginated, filtered)
+GET    /public            - Public internships list (no auth, paginated)
+GET    /public/:id        - Public internship details (no auth)
+GET    /                  - List internships (role-scoped, authenticated)
 GET    /:id               - Get internship details
-POST   /                  - Create internship (admin)
-PUT    /:id               - Update internship (admin)
-PUT    /:id/close         - Close internship (admin)
-DELETE /:id               - Delete internship (admin)
+GET    /stats             - Internship statistics (admin)
+POST   /                  - Create internship (admin/trainer)
+PUT    /:id               - Update internship (admin/trainer)
+PATCH  /:id/publish       - Publish internship (admin/trainer)
+PATCH  /:id/close         - Close internship (admin/trainer)
+DELETE /:id               - Soft-delete internship (admin)
 
 7.3 Applications (/api/applications)
 -------------------------------------
-POST   /                  - Apply for internship (student)
-GET    /                  - List applications (role-scoped)
-PUT    /:id/approve       - Approve application (admin/trainer)
-PUT    /:id/reject        - Reject application (admin/trainer)
-PUT    /:id/withdraw      - Withdraw application (student)
+POST   /apply             - Apply for internship (student)
+GET    /my                - My applications (student)
+GET    /all               - All applications (admin)
+GET    /internship/:internshipId - Applications for internship (admin/trainer)
+PATCH  /:id/approve       - Approve application + send offer letter (admin/trainer)
+PATCH  /:id/reject        - Reject application (admin/trainer)
+PATCH  /:id/complete      - Mark internship completed (admin)
+PATCH  /:id/withdraw      - Withdraw application (student)
+GET    /offer-letters     - My offer letters (student)
+GET    /offer-letters/all - All offer letters (admin)
+GET    /offer-letters/:id/download - Download offer letter PDF
+POST   /offer-letters/:id/resend-email - Resend offer letter email (admin)
 
 7.4 Tasks (/api/tasks)
 -----------------------
-POST   /                  - Create task (trainer)
+GET    /stats             - Task statistics (role-scoped)
+POST   /                  - Create task (trainer/admin)
 GET    /                  - List tasks (role-scoped)
 GET    /:id               - Get task details
-PUT    /:id               - Update task (trainer)
-DELETE /:id               - Delete task (trainer)
-POST   /:id/submit        - Submit task (student)
-PUT    /:id/review        - Review submission (trainer)
+PUT    /:id               - Update task (trainer/admin)
+DELETE /:id               - Delete task (trainer/admin)
+POST   /:taskId/submit    - Submit task (student)
+PATCH  /submissions/:id/review - Review submission (trainer/admin)
 
 7.5 Certificates (/api/certificates)
 -------------------------------------
-POST   /                  - Generate certificate (trainer/admin)
+GET    /verify            - Verify certificate by number (public)
+GET    /:id/public        - Public certificate view for share link (no auth)
+GET    /stats             - Certificate statistics (admin)
+POST   /generate          - Generate certificate (admin/trainer)
 GET    /                  - List certificates (role-scoped)
-GET    /:id               - Get certificate details
-GET    /verify/:number    - Verify certificate (public)
-GET    /:id/pdf           - Download PDF certificate
+GET    /:id               - Get certificate details (+ share URLs)
+GET    /:id/download      - Download PDF certificate (authenticated blob)
 GET    /:id/qr            - Get QR code image
-PUT    /:id/revoke        - Revoke certificate (admin)
+POST   /:id/resend-email  - Resend certificate email with PDF (admin)
+PATCH  /:id/revoke        - Revoke certificate (admin)
 
 7.6 Discussion/Messaging (/api/discussions)
 --------------------------------------------
-POST   /conversations     - Create conversation
-GET    /conversations     - List conversations (role-scoped)
-GET    /conversations/:id - Get conversation details
-POST   /conversations/:id/messages - Send message
-GET    /conversations/:id/messages - Get messages (paginated)
-PUT    /messages/:id      - Edit message
-DELETE /messages/:id      - Delete message
-PUT    /messages/:id/pin  - Pin/unpin message
-PUT    /messages/:id/read - Mark messages as read
+GET    /trainer/internships        - Trainer's internships (trainer)
+GET    /trainer/conversations      - Trainer conversations with previews (trainer)
+GET    /trainer/internship/:id/students - Students in internship (trainer)
+POST   /conversation               - Get-or-create conversation (trainer)
+GET    /student/conversations      - Student conversations (student)
+GET    /admin/conversations        - All conversations (admin)
+PATCH  /:conversationId/close      - Close/reopen conversation (admin)
+PATCH  /:conversationId/mute       - Mute/unmute participant (admin)
+GET    /:conversationId/messages   - Get messages (paginated, search support)
+POST   /:conversationId/messages   - Send message (REST, guaranteed delivery)
+GET    /:conversationId/pinned     - Pinned messages
+DELETE /messages/:messageId        - Delete message
+GET    /online-users               - Online user IDs
 
 7.7 Trainers (/api/trainers)
 ------------------------------
-POST   /                  - Create trainer (admin)
-GET    /                  - List trainers
-GET    /:id               - Get trainer details
+PUT    /profile           - Trainer updates own profile
+POST   /                  - Create trainer (admin, sends welcome email)
+GET    /stats             - Trainer statistics (admin)
+GET    /                  - List trainers (admin)
+GET    /:id               - Get trainer details (admin)
 PUT    /:id               - Update trainer (admin)
-PUT    /:id/toggle-status - Activate/suspend trainer (admin)
-PUT    /:id/assign        - Assign students to trainer (admin)
+POST   /:id/assign-students - Assign students, capacity enforced (admin)
+DELETE /:id/students/:studentId - Remove student from trainer (admin)
+PATCH  /:id/status        - Activate/suspend trainer (admin)
 DELETE /:id               - Delete trainer (admin)
+POST   /:id/reset-password - Reset trainer password (admin)
 
 7.8 Students (/api/students)
 ------------------------------
-GET    /profile           - Get own profile
-PUT    /profile           - Update profile
+PUT    /profile           - Student updates own profile
 POST   /avatar            - Upload avatar
 POST   /resume            - Upload resume
-GET    /                  - List students (admin)
-GET    /:id               - Get student details (admin)
+GET    /stats             - Student statistics (admin)
+GET    /                  - List students (admin/trainer)
+GET    /:id               - Get student details (admin/trainer)
 PUT    /:id               - Update student (admin)
+PATCH  /:id/status        - Toggle student status (admin)
 DELETE /:id               - Delete student (admin)
+POST   /:id/reset-password - Reset student password (admin)
 
 7.9 Notifications (/api/notifications)
 ---------------------------------------
 GET    /                  - List notifications (paginated)
 GET    /unread-count      - Get unread count
-PUT    /:id/read          - Mark as read
-PUT    /read-all          - Mark all as read
+PATCH  /:id/read          - Mark as read
+PATCH  /read-all          - Mark all as read
 
 7.10 Reports (/api/reports)
 -----------------------------
 GET    /admin/dashboard   - Admin dashboard statistics
 GET    /trainer/dashboard - Trainer dashboard statistics
 GET    /student/dashboard - Student dashboard statistics
+GET    /monthly           - Monthly report (admin)
 GET    /export            - Export data to Excel (admin)
 
 7.11 Settings (/api/settings)
 -------------------------------
-GET    /                  - Get all settings (public + private based on role)
-PUT    /                  - Update settings (admin)
+GET    /public            - Public site settings (no auth)
+GET    /                  - Get all settings (role-scoped)
+GET    /:key              - Get setting by key
+PUT    /                  - Update setting (admin)
 PUT    /bulk              - Bulk update settings (admin)
+DELETE /:key              - Delete setting (admin)
 
 7.12 Upload (/api/upload)
 ---------------------------
-POST   /image             - Upload image
-POST   /document          - Upload document
-POST   /multiple          - Upload multiple files
+POST   /image             - Upload image (field: "file")
+POST   /document          - Upload document (field: "file")
+POST   /multiple          - Upload multiple files (field: "files", max 10)
+
+7.13 Articles (/api/articles)
+------------------------------
+GET    /                  - List published articles (public)
+GET    /:id               - Get article (public)
+GET    /my                - My articles (authenticated)
+GET    /my/:id            - Get own article for editing (authenticated)
+POST   /                  - Create article (authenticated)
+PUT    /:id               - Update article (author)
+PATCH  /:id/status        - Publish/unpublish (author)
+DELETE /:id               - Delete article (author)
+
+7.14 Feedback (/api/feedback)
+------------------------------
+POST   /public            - Submit feedback (no auth)
+POST   /                  - Submit feedback (authenticated)
+GET    /stats             - Feedback statistics (admin)
+GET    /                  - List feedback (admin)
+GET    /:id               - Get feedback details (admin)
+POST   /:id/reply         - Reply to feedback (admin)
+PATCH  /:id/status        - Update feedback status (admin)
+DELETE /:id               - Delete feedback (admin)
 
 ================================================================================
 8. REAL-TIME FEATURES (Socket.io)
@@ -573,28 +744,33 @@ POST   /multiple          - Upload multiple files
 - User online/offline status tracking
 
 8.2 Events
-GET    /:id/qr            - Get QR code image
+----------
 Client -> Server:
-- joinConversation      - Join a conversation room
+- joinConversation      - Join a conversation room (also marks messages read)
 - leaveConversation     - Leave a conversation room
-- sendMessage           - Send a real-time message
-- typing:start          - Start typing indicator
-- typing:stop           - Stop typing indicator
-- editMessage           - Edit a message
-- deleteMessage         - Delete a message
-- pinMessage            - Pin/unpin a message
-- markMessagesRead      - Mark messages as read
+- sendMessage           - Send a real-time message (REST is primary path)
+- typing                - Start typing indicator
+- stopTyping            - Stop typing indicator
+- messageEdited         - Edit a message
+- messageDeleted        - Delete a message
+- togglePin             - Pin/unpin a message
+- toggleImportant       - Mark/unmark message as important
 
 Server -> Client:
-- messageReceived       - New message delivered
+- newMessage            - New message delivered (with conversationId)
 - messageEdited         - Message edited notification
 - messageDeleted        - Message deleted notification
 - messagePinned         - Message pinned notification
-- typingIndicator       - Typing status update
+- messageImportant      - Important flag notification
+- messagesRead          - Read receipts update
+- userTyping / userStopTyping - Typing status update
 - userOnline            - User came online
-- userOffline           - User went offline
-- unreadCountUpdate     - Unread count changed
-- notificationReceived  - New notification pushed
+- joinedConversation    - Room join confirmation
+- notification          - Real-time notification pushed to user room
+- error                 - Socket-level authorization/mute errors
+
+Rooms: user:<userId> for notifications, conversation:<conversationId> for chat.
+Message reads are applied automatically when a user joins a conversation room.
 
 ================================================================================
 9. SECURITY MEASURES
@@ -612,8 +788,13 @@ Server -> Client:
 9.2 Data Protection
 --------------------
 - Helmet.js for HTTP security headers
-- CORS configuration with allowed origins
-- express-rate-limit for API throttling
+- CORS configuration with allowed origins (CLIENT_URL allow-list)
+- Rate limiting, separated by purpose:
+  - General API limiter: 1000 requests per IP per 15 minutes
+    (skips /api/auth/* and health check)
+  - Authentication limiter: 100 failed attempts per IP per 15 minutes
+    (skipSuccessfulRequests; /auth/refresh-token fully exempt so
+    automatic token renewal never returns 429)
 - Input validation via express-validator
 - MongoDB injection prevention via Mongoose
 - XSS protection via input sanitization
@@ -647,7 +828,9 @@ Server -> Client:
 - Password reset OTP email
 - Task assignment notification
 - Task submission review notification
-- Certificate issuance notification
+- Offer letter email with PDF attachment (on approval)
+- Certificate issuance notification with PDF attachment
+- Offer letter / certificate email resend (admin action)
 
 10.2 Email Configuration
 --------------------------
@@ -732,12 +915,14 @@ Client:
 13.1 Server Directory
 ----------------------
 server/
+├── assets/           # Static server assets (signature.png for offer letters)
 ├── config/           # Database connection, admin seeding
-── controllers/      # Business logic handlers
+├── controllers/      # Business logic handlers
 ├── middleware/       # Auth, validation, error handling, upload
 ├── models/           # Mongoose schemas and discriminators
-── routes/           # Express route definitions
-── services/         # Email, cloudinary, notifications, activity log
+├── routes/           # Express route definitions
+├── services/         # Email, cloudinary, notifications, activity log,
+│                     #   certificate PDF, offer letter PDF
 ├── socket/           # Socket.io event handlers
 ├── utils/            # Helper utilities
 ├── .env              # Environment variables
@@ -761,7 +946,8 @@ client/
 │   │   ├── student/  # Student dashboard pages
 │   │   └── trainer/  # Trainer dashboard pages
 │   ├── redux/        # Redux store and slices
-│   ├── services/     # API client (Axios instance)
+│   ├── services/     # API client (Axios instance) + localStorage API cache
+│   │                 #   (api.js, apiCache.js)
 │   ├── App.jsx       # Root app component with routing
 │   └── main.jsx      # Entry point
 ├── index.html        # HTML template

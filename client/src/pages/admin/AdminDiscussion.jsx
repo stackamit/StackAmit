@@ -4,6 +4,7 @@ import {
   FiLock, FiUnlock, FiVolumeX, FiVolume2, FiChevronDown,
 } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 import { useSocket } from '../../context/SocketContext';
 import ChatPanel from '../../components/ChatPanel';
 
@@ -32,14 +33,14 @@ const AdminDiscussion = () => {
       if (selectedConversation?._id === convId) {
         setSelectedConversation(prev => ({ ...prev, isClosed: !prev.isClosed }));
       }
-    } catch (err) { alert(err.response?.data?.message || 'Failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
 
   const handleToggleMute = async (convId, userId) => {
     try {
       await api.patch(`/discussions/${convId}/mute`, { userId });
       fetchConversations();
-    } catch (err) { alert(err.response?.data?.message || 'Failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
 
   const getName = (user) => {

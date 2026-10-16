@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FiSearch, FiDownload, FiMoreVertical, FiToggleLeft, FiToggleRight, FiTrash2, FiRefreshCw, FiUser } from 'react-icons/fi';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AdminStudents = () => {
   const [search, setSearch] = useState('');
@@ -65,7 +66,7 @@ const AdminStudents = () => {
     if (!window.confirm('Reset this student\'s password? A temporary password will be generated.')) return;
     try {
       const { data } = await api.post(`/students/${studentId}/reset-password`);
-      alert(`Password reset. Temporary password: ${data.data.tempPassword}`);
+      toast.success(`Password reset. Temporary password: ${data.data.tempPassword}`, { duration: 8000 });
       setActionMenu(null);
     } catch (err) {
       console.error('Failed to reset password:', err);

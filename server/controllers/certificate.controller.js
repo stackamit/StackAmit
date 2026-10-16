@@ -53,7 +53,7 @@ export const generateCertificate = asyncHandler(async (req, res) => {
       try {
         const fullCertificate = await getCertificatePopulated(certificate._id);
         const pdfBuffer = fullCertificate ? await generateCertificatePDFBuffer(fullCertificate) : null;
-        const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificateNumber}`;
+        const verificationUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificateNumber}`;
         const result = await sendCertificateEmail(studentEmail, student.name, internship.title, certificateNumber, {
           type,
           issuedDate: certificate.issuedDate,

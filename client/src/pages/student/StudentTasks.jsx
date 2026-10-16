@@ -12,6 +12,7 @@ import {
   FiMessageSquare,
 } from "react-icons/fi";
 import api from "../../services/api";
+import toast from 'react-hot-toast';
 
 const StudentTasks = () => {
   const [tasks, setTasks] = useState([]);
@@ -54,7 +55,7 @@ const StudentTasks = () => {
       setSubmitForm({ githubLink: "", liveUrl: "", remarks: "" });
       fetchTasks();
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to submit");
+      toast.error(err.response?.data?.message || "Failed to submit");
     } finally {
       setSubmitting(false);
     }

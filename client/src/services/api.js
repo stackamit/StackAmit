@@ -1,4 +1,7 @@
 import axios from 'axios';
+import {
+  getCacheTtl, readCacheEntry, writeCacheEntry, invalidateResource,
+} from './apiCache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -60,6 +63,12 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   (response) => {
+    // Any successful mutation clears cached GETs for that resource,
+    // so the next read always comes fresh from the server.
+    const method = (response.config?.method || '').toLowerCase();
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      invalidateResource(response.config.url);
+    }
     return response;
   },
 
@@ -185,6 +194,36 @@ api.interceptors.response.use(
     }
   }
 );
+
+// ─────────────────────────────────────────────
+// Cached GET (browser localStorage cache)
+//
+// For whitelisted "static-ish" endpoints the response is stored
+// in localStorage and replayed on subsequent loads until it
+// expires (TTL) or a related mutation invalidates it. This makes
+// repeat navigation feel instant and also reduces API requests
+// (fewer chances of hitting rate limits).
+// ─────────────────────────────────────────────
+
+const originalGet = api.get.bind(api);
+
+api.get = (url, config = {}) => {
+  const ttl = getCacheTtl(url);
+  // Binary downloads (PDF/Excel blobs) are never cacheable
+  if (!ttl || (config.responseType && config.responseType !== 'json')) {
+    return originalGet(url, config);
+  }
+
+  const cached = readCacheEntry(url, config.params);
+  if (cached) return Promise.resolve(cached);
+
+  return originalGet(url, config).then((response) => {
+    if (response.status === 200 && response.data) {
+      writeCacheEntry(url, config.params, response.data, ttl);
+    }
+    return response;
+  });
+};
 
 export default api;
 

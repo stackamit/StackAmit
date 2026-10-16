@@ -76,17 +76,21 @@ app.use(
 //
 // Applies to all /api routes EXCEPT /api/auth/*.
 //
-// Limit:
-// 100 requests per IP per hour.
+// SPA dashboards fire many parallel GETs on every page load,
+// so the limit must be generous enough to never break normal
+// browsing (a tight limit here caused 429s + token refresh failures).
+//
+// Limit: 1000 requests per IP per 15 minutes.
 const limiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
+  windowMs: 15 * 60 * 1000, // 15 minutes
 
-  max: 100,
+  max: 1000,
 
   // Do NOT apply the general limiter to authentication routes.
   // Authentication routes have their own limiter below.
   skip: (req) => {
-    return req.path.startsWith('/auth');
+    const path = req.originalUrl || req.url || '';
+    return path.startsWith('/api/auth') || path.startsWith('/api/health');
   },
 
   message: {
@@ -103,11 +107,26 @@ const limiter = rateLimit({
 // Applies only to /api/auth/*.
 //
 // Limit:
-// 50 requests per IP per 15 minutes.
+// 100 failed attempts per IP per 15 minutes.
+//
+// Notes:
+// - Successful auth attempts are skipped (skipSuccessfulRequests),
+//   so genuine users are never locked out.
+// - The token-refresh endpoint is fully excluded: rate-limiting
+//   refresh calls caused 429s during automatic token renewal, which
+//   forced users to the login page.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
 
-  max: 50,
+  max: 100,
+
+  skip: (req) => {
+    const path = req.originalUrl || req.url || '';
+    // Never throttle automatic access-token refreshes
+    return path.includes('/auth/refresh-token');
+  },
+
+  skipSuccessfulRequests: true,
 
   message: {
     success: false,

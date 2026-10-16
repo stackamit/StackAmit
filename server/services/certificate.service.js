@@ -1,6 +1,14 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Certificate from '../models/Certificate.js';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
+
+// Authorized signature image — same asset used on offer letters (server/assets)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SIGNATURE_IMAGE_PATH = path.join(__dirname, '../assets/signature.png');
+const HAS_SIGNATURE = fs.existsSync(SIGNATURE_IMAGE_PATH);
 
 /**
  * Fetch a fully populated certificate for PDF generation / detail view.
@@ -105,59 +113,90 @@ const renderCertificateBody = (doc, certificate, verificationUrl) => {
   doc.fontSize(22).font('Helvetica-Bold');
   doc.text(certificate.internshipTitle || 'Internship Program', centerX - 250, 332, { width: 500, align: 'center' });
 
-  // Duration
-  if (certificate.duration) {
-    doc.fillColor('#777777');
-    doc.fontSize(12).font('Helvetica');
-    doc.text(`Duration: ${certificate.duration}`, centerX - 200, 365, { width: 400, align: 'center' });
-  }
-
-  // Internship dates
+  // ─── Credentials band (Duration · Period · Category · Issue date) ───
   const internship = certificate.internshipId;
-  if (internship?.startDate && internship?.endDate) {
-    const startStr = new Date(internship.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-    const endStr = new Date(internship.endDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.fillColor('#777777');
-    doc.fontSize(11).font('Helvetica');
-    doc.text(`${startStr} — ${endStr}`, centerX - 200, 385, { width: 400, align: 'center' });
-  }
+  const bandY = 385;
+  doc.moveTo(centerX - 330, bandY - 16).lineTo(centerX + 330, bandY - 16)
+    .strokeColor('#e8e8e8').lineWidth(0.75).stroke();
 
-  // Category badge
-  if (internship?.category) {
+  const startStr = internship?.startDate
+    ? new Date(internship.startDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
+  const endStr = internship?.endDate
+    ? new Date(internship.endDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
+  const issueDate = new Date(certificate.issuedDate || certificate.createdAt)
+    .toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const bandItems = [
+    { label: 'DURATION', value: certificate.duration || (internship?.durationWeeks ? `${internship.durationWeeks} Weeks` : '—') },
+    { label: 'INTERNSHIP PERIOD', value: startStr && endStr ? `${startStr} — ${endStr}` : '—', valueSize: 9 },
+    { label: 'CATEGORY', value: internship?.category || '—' },
+    { label: 'DATE OF ISSUE', value: issueDate },
+  ];
+  const bandColW = 165;
+  [-255, -85, 85, 255].forEach((offset, idx) => {
+    const cx = centerX + offset;
+    const item = bandItems[idx];
+    doc.fillColor('#c9a84c');
+    doc.fontSize(7).font('Helvetica-Bold');
+    doc.text(item.label, cx - bandColW / 2, bandY, { width: bandColW, align: 'center' });
     doc.fillColor('#1e3a5f');
-    doc.fontSize(11).font('Helvetica-Bold');
-    doc.text(`Category: ${internship.category}`, centerX - 200, 408, { width: 400, align: 'center' });
+    doc.fontSize(item.valueSize || 10).font('Helvetica');
+    doc.text(String(item.value), cx - bandColW / 2, bandY + 15, { width: bandColW, align: 'center' });
+  });
+  // thin vertical dividers between the four columns
+  [-170, 0, 170].forEach((off) => {
+    doc.moveTo(centerX + off, bandY - 6).lineTo(centerX + off, bandY + 32)
+      .strokeColor('#ececec').lineWidth(0.75).stroke();
+  });
+
+  // ─── Signature block (bottom center) ───
+  const sigLineY = pageHeight - 105;
+  doc.fillColor('#c9a84c');
+  doc.fontSize(7).font('Helvetica-Bold');
+  doc.text('SIGNED', centerX - 60, sigLineY - 76, { width: 120, align: 'center' });
+  if (HAS_SIGNATURE) {
+    try {
+      doc.image(SIGNATURE_IMAGE_PATH, centerX - 75, sigLineY - 62, { fit: [150, 50] });
+    } catch (imgErr) {
+      console.error('[Certificate] Failed to draw signature image:', imgErr.message);
+    }
   }
+  doc.moveTo(centerX - 95, sigLineY).lineTo(centerX + 95, sigLineY)
+    .strokeColor('#1e3a5f').lineWidth(1.25).stroke();
+  // gold end-cap dots
+  doc.fillColor('#c9a84c');
+  doc.circle(centerX - 95, sigLineY, 1.8).fill();
+  doc.circle(centerX + 95, sigLineY, 1.8).fill();
 
-  // Issue date
-  const issueDate = new Date(certificate.issuedDate || certificate.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
-  doc.fillColor('#555555');
-  doc.fontSize(11).font('Helvetica');
-  doc.text(`Issued on ${issueDate}`, centerX - 200, 435, { width: 400, align: 'center' });
+  doc.fillColor('#1e3a5f');
+  doc.fontSize(11).font('Helvetica-Bold');
+  doc.text('Amit Kumar', centerX - 120, sigLineY + 9, { width: 240, align: 'center' });
+  doc.fillColor('#666666');
+  doc.fontSize(8.5).font('Helvetica');
+  doc.text('Authorized Signature · Founder, StackAmit', centerX - 130, sigLineY + 24, { width: 260, align: 'center' });
 
-  // Certificate number at bottom
+  // ─── Bottom-left: certificate identity block ───
+  doc.fillColor('#c9a84c');
+  doc.fontSize(7).font('Helvetica-Bold');
+  doc.text('CERTIFICATE NUMBER', 60, pageHeight - 112);
   doc.fillColor('#1e3a5f');
   doc.fontSize(10).font('Helvetica-Bold');
-  doc.text(`Certificate No: ${certificate.certificateNumber}`, 60, pageHeight - 80, { width: 300 });
-
-  // Verification ID
+  doc.text(certificate.certificateNumber, 60, pageHeight - 99, { width: 215 });
   doc.fillColor('#999999');
-  doc.fontSize(8).font('Helvetica');
-  doc.text(`ID: ${certificate.verificationId}`, 60, pageHeight - 65, { width: 300 });
+  doc.fontSize(7.5).font('Helvetica');
+  doc.text(`Verification ID: ${certificate.verificationId}`, 60, pageHeight - 83, { width: 215 });
 
-  // Footer text
-  doc.fillColor('#999999');
-  doc.fontSize(8).font('Helvetica');
-  doc.text('StackAmit Internship Management System', centerX - 150, pageHeight - 65, { width: 300, align: 'center' });
+  // ─── Footer ───
+  doc.fillColor('#bbbbbb');
+  doc.fontSize(7).font('Helvetica');
+  doc.text(
+    'This certificate was generated electronically by StackAmit · Verify authenticity using the QR code or at stackamit.netlify.app/verify-certificate',
+    centerX - 290, pageHeight - 52, { width: 580, align: 'center' }
+  );
 
-  // Signature area
-  doc.moveTo(pageWidth - 230, pageHeight - 90).lineTo(pageWidth - 80, pageHeight - 90)
-    .strokeColor('#cccccc').lineWidth(0.5).stroke();
-  doc.fillColor('#555555');
-  doc.fontSize(9).font('Helvetica');
-  doc.text('Authorized Signature', pageWidth - 230, pageHeight - 85, { width: 150, align: 'center' });
-
-  // QR Code (verification URL)
+  // ─── QR code caption (QR image drawn by the caller) ───
   const qrSize = 70;
   const qrX = pageWidth - 130;
   const qrY = pageHeight - 150;
@@ -181,7 +220,7 @@ export const generateCertificatePDFBuffer = (certificate) => {
 
       const pageWidth = doc.page.width;
       const pageHeight = doc.page.height;
-      const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+      const verificationUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
       // Generate QR first (async), then render everything synchronously
       QRCode.toDataURL(verificationUrl, { width: 200, margin: 1, color: { dark: '#1e3a5f', light: '#ffffff' } })

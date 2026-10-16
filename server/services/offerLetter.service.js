@@ -1,5 +1,13 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Application from '../models/Application.js';
 import PDFDocument from 'pdfkit';
+
+// Authorized signature image (bundled with the server under /assets)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SIGNATURE_IMAGE_PATH = path.join(__dirname, '../assets/signature.png');
+const HAS_SIGNATURE = fs.existsSync(SIGNATURE_IMAGE_PATH);
 
 /**
  * Fetch a fully populated application for offer letter PDF generation.
@@ -204,17 +212,28 @@ export const generateOfferLetterPDFBuffer = (application) => {
       doc.text('We look forward to a productive and enriching experience with you!', leftMargin, yPos, { width: contentWidth });
       yPos += 25;
 
-      // Signature section
-      doc.moveTo(rightMargin - 180, yPos).lineTo(rightMargin, yPos)
+      // Signature section (signature image drawn above the line)
+      const sigBoxX = rightMargin - 180;
+      // Clamp so the signature block always fits above the footer, even with long content
+      const sigImgTopY = Math.min(yPos, pageHeight - 160);
+      if (HAS_SIGNATURE) {
+        try {
+          doc.image(SIGNATURE_IMAGE_PATH, sigBoxX + 15, sigImgTopY - 12, { fit: [150, 50] });
+        } catch (imgErr) {
+          console.error('[OfferLetter] Failed to draw signature image:', imgErr.message);
+        }
+      }
+      const sigLineY = sigImgTopY + (HAS_SIGNATURE ? 48 : 0);
+      doc.moveTo(sigBoxX, sigLineY).lineTo(rightMargin, sigLineY)
         .strokeColor('#cccccc').lineWidth(0.5).stroke();
-      yPos += 5;
+      yPos = sigLineY + 5;
       doc.fillColor('#333333');
       doc.fontSize(10).font('Helvetica-Bold');
-      doc.text('Authorized Signature', rightMargin - 180, yPos, { width: 180, align: 'center' });
+      doc.text('Authorized Signature', sigBoxX, yPos, { width: 180, align: 'center' });
       yPos += 14;
       doc.fillColor('#666666');
       doc.fontSize(9).font('Helvetica');
-      doc.text('StackAmit Internship Program', rightMargin - 180, yPos, { width: 180, align: 'center' });
+      doc.text('StackAmit Internship Program', sigBoxX, yPos, { width: 180, align: 'center' });
 
       // ─── Footer ───
       doc.fillColor('#aaaaaa');
