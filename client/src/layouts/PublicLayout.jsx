@@ -31,8 +31,6 @@ const Navbar = () => {
             <Link to="/articles" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Articles</Link>
             <Link to="/about" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">About</Link>
             <Link to="/contact" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Contact</Link>
-            <Link to="/feedback" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Feedback</Link>
-            <Link to="/verify-certificate" className="text-dark-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium transition-colors">Verify Certificate</Link>
           </div>
 
           <div className="hidden md:flex items-center gap-4">
@@ -65,8 +63,6 @@ const Navbar = () => {
             <Link to="/articles" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Articles</Link>
             <Link to="/about" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>About</Link>
             <Link to="/contact" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Contact</Link>
-            <Link to="/feedback" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Feedback</Link>
-            <Link to="/verify-certificate" className="block py-2 text-dark-600 dark:text-dark-300 font-medium" onClick={() => setMobileMenuOpen(false)}>Verify Certificate</Link>
             <hr className="border-dark-100 dark:border-dark-700" />
             <Link to="/login" className="block py-2 text-primary-600 font-medium" onClick={() => setMobileMenuOpen(false)}>Login</Link>
             <Link to="/register" className="block btn-primary text-center text-sm" onClick={() => setMobileMenuOpen(false)}>Get Started</Link>

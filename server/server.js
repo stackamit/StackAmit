@@ -49,6 +49,21 @@ const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // ─────────────────────────────────────────────
+// Trust Proxy
+// ─────────────────────────────────────────────
+//
+// The API runs behind Render's load balancer, which forwards the
+// real client address in the X-Forwarded-For header. Without this,
+// express-rate-limit sees every request as coming from the single
+// proxy IP, so ALL users share one rate-limit bucket. That bucket
+// is exhausted quickly (dashboard polling + notification checks),
+// returning 429s and making the app feel slow / broken.
+//
+// Trusting one proxy hop makes each real visitor get their own
+// independent limit instead of a shared global one.
+app.set('trust proxy', 1);
+
+// ─────────────────────────────────────────────
 // Security Middleware
 // ─────────────────────────────────────────────
 

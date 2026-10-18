@@ -53,7 +53,7 @@ export const generateCertificate = asyncHandler(async (req, res) => {
       try {
         const fullCertificate = await getCertificatePopulated(certificate._id);
         const pdfBuffer = fullCertificate ? await generateCertificatePDFBuffer(fullCertificate) : null;
-        const verificationUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificateNumber}`;
+        const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificateNumber}`;
         const result = await sendCertificateEmail(studentEmail, student.name, internship.title, certificateNumber, {
           type,
           issuedDate: certificate.issuedDate,
@@ -214,8 +214,8 @@ export const getCertificateById = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
-  const frontendUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/certificate/${certificate._id}`;
-  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const frontendUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/certificate/${certificate._id}`;
+  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   res.status(200).json({
     success: true,
@@ -246,7 +246,7 @@ export const getCertificateByIdPublic = asyncHandler(async (req, res) => {
     internshipId: certificate.internshipId,
   };
 
-  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   res.status(200).json({
     success: true,
@@ -290,7 +290,7 @@ export const resendCertificateEmail = asyncHandler(async (req, res) => {
 
   // Generate the certificate PDF and send the email with it attached
   const pdfBuffer = await generateCertificatePDFBuffer(certificate);
-  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
   const result = await sendCertificateEmail(student.email, studentName, certificate.internshipTitle, certificate.certificateNumber, {
     type: certificate.type,
     issuedDate: certificate.issuedDate || certificate.createdAt,
@@ -324,7 +324,7 @@ export const getCertificateQR = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Certificate not found' });
   }
 
-  const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   const qrDataUrl = await QRCode.toDataURL(verificationUrl, {
     width: 400, margin: 2,

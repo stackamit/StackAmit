@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
-  FiSearch, FiRefreshCw, FiChevronDown, FiUsers, FiMessageSquare,
-  FiCircle,
+  FiSearch, FiRefreshCw, FiUsers, FiMessageSquare,
+  FiLayers, FiActivity, FiArrowRight, FiSmile,
 } from 'react-icons/fi';
 import api from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
@@ -22,6 +22,25 @@ const timeAgo = (d) => {
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
   const sameYear = date.getFullYear() === now.getFullYear();
   return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric' });
+};
+
+// Small colored dot used to hint at a program's category
+const categoryDot = (category) => {
+  const map = {
+    'Web Development': 'bg-sky-400',
+    'Mobile Development': 'bg-violet-400',
+    'Data Science': 'bg-emerald-400',
+    'Machine Learning': 'bg-fuchsia-400',
+    'UI/UX Design': 'bg-pink-400',
+    'Digital Marketing': 'bg-amber-400',
+    'Cloud Computing': 'bg-cyan-400',
+    'Cyber Security': 'bg-red-400',
+    'DevOps': 'bg-orange-400',
+    'Blockchain': 'bg-indigo-400',
+    'Artificial Intelligence': 'bg-teal-400',
+    'Business Analytics': 'bg-lime-400',
+  };
+  return map[category] || 'bg-primary-400';
 };
 
 const TrainerDiscussion = () => {
@@ -71,6 +90,10 @@ const TrainerDiscussion = () => {
     } catch (err) { console.error(err); }
   };
 
+  const refreshAll = () => {
+    if (selectedInternship) { fetchStudents(); fetchConversations(); }
+  };
+
   // Live-update conversation previews when a message arrives
   useEffect(() => {
     if (!socket) return;
@@ -95,7 +118,7 @@ const TrainerDiscussion = () => {
     setMobileView('chat');
     try {
       const { data } = await api.post('/discussions/conversation', {
-        internshipId: selectedInternship,
+        internshipId: student.currentInternship || selectedInternship,
         studentId: student._id,
       });
       setSelectedConversation(data.data.conversation);
@@ -144,62 +167,125 @@ const TrainerDiscussion = () => {
   });
 
   const selectedInternshipData = internships.find(i => i._id === selectedInternship);
+  const onlineCount = students.filter(s => isUserOnline(s._id)).length;
+  const totalUnread = students.reduce((sum, s) => sum + getUnread(s._id), 0);
 
   return (
-    <div>
-      <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="page-title">Internship Discussion</h1>
-          <p className="page-subtitle">Communicate with your students</p>
+    <div className="space-y-5">
+      {/* ─── Hero Header ─── */}
+      <div className="relative overflow-hidden rounded-2xl p-5 sm:p-6 bg-gradient-to-br from-primary-700 via-primary-600 to-indigo-500 shadow-card-hover">
+        {/* decorative blobs */}
+        <div className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-secondary-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)', backgroundSize: '22px 22px' }} />
+
+        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center ring-1 ring-white/25 shadow-lg">
+              <FiMessageSquare size={24} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-white font-display leading-tight">Internship Discussion</h1>
+              <p className="text-sm text-white/75 mt-0.5">Mentor and connect with your students in real time</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm ring-1 ${connected ? 'bg-white/15 text-white ring-white/25' : 'bg-red-500/20 text-white ring-red-400/30'}`}>
+              <span className="relative flex w-2 h-2">
+                {connected && <span className="absolute inline-flex w-full h-full rounded-full bg-green-400 opacity-75 animate-ping" />}
+                <span className={`relative inline-flex w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
+              </span>
+              {connected ? 'Live' : 'Offline'}
+            </div>
+            <button onClick={refreshAll} className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-sm ring-1 ring-white/25 transition-all active:scale-95">
+              <FiRefreshCw size={14} /> Refresh
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-xs text-dark-400">{connected ? 'Live' : 'Offline'}</span>
-          <button onClick={() => { fetchStudents(); fetchConversations(); }} className="btn-outline flex items-center gap-2 text-sm ml-2">
-            <FiRefreshCw size={14} /> Refresh
-          </button>
+
+        {/* stat strip */}
+        <div className="relative mt-5 grid grid-cols-3 gap-2.5 sm:gap-3">
+          {[
+            { label: 'Programs', value: internships.length, icon: FiLayers },
+            { label: 'Students', value: students.length, icon: FiUsers },
+            { label: 'Online now', value: onlineCount, icon: FiActivity },
+          ].map((s) => (
+            <div key={s.label} className="flex items-center gap-3 rounded-xl bg-white/10 backdrop-blur-sm border border-white/15 px-3 sm:px-4 py-2.5">
+              <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+                <s.icon size={15} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-white/70 text-[10px] sm:text-[11px] uppercase tracking-wide leading-none">{s.label}</p>
+                <p className="text-white text-base sm:text-lg font-bold leading-tight">{s.value}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Internship Selector */}
-      <div className="card p-4 mb-4">
-        <label className="label text-sm font-medium mb-2">Select Internship</label>
-        <div className="relative">
-          <select
-            value={selectedInternship}
-            onChange={e => { setSelectedInternship(e.target.value); setSelectedConversation(null); setSelectedStudent(null); }}
-            className="input-field py-2.5 w-full appearance-none pr-10"
-          >
-            {internships.map(i => (
-              <option key={i._id} value={i._id}>{i.title}</option>
-            ))}
-          </select>
-          <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 pointer-events-none" />
+      {/* ─── Program Selector ─── */}
+      <div className="card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <FiLayers size={16} className="text-primary-500" />
+            <span className="text-sm font-semibold text-dark-700 dark:text-dark-200">Your Programs</span>
+          </div>
+          {selectedInternshipData && (
+            <span className="text-xs text-dark-400 flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${categoryDot(selectedInternshipData.category)}`} />
+              {selectedInternshipData.category}
+              <span className="text-dark-300 dark:text-dark-600">·</span>
+              <span className="capitalize">{selectedInternshipData.status}</span>
+            </span>
+          )}
         </div>
-        {selectedInternshipData && (
-          <div className="flex items-center gap-3 mt-2 text-xs text-dark-400">
-            <span className="px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">{selectedInternshipData.category}</span>
-            <span>{selectedInternshipData.status}</span>
+
+        {internships.length === 0 ? (
+          <p className="text-sm text-dark-400 py-2">No programs assigned yet. Students will appear here once they are assigned to you.</p>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1">
+            {internships.map((i) => {
+              const active = selectedInternship === i._id;
+              return (
+                <button
+                  key={i._id}
+                  onClick={() => { setSelectedInternship(i._id); setSelectedConversation(null); setSelectedStudent(null); }}
+                  className={`group flex items-center gap-2 whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 border ${
+                    active
+                      ? 'bg-gradient-to-r from-primary-600 to-primary-500 text-white border-transparent shadow-md shadow-primary-500/30'
+                      : 'bg-dark-50 dark:bg-dark-700/60 text-dark-600 dark:text-dark-300 border-dark-100 dark:border-dark-600 hover:border-primary-300 hover:text-primary-600 dark:hover:text-primary-300'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${active ? 'bg-white' : categoryDot(i.category)}`} />
+                  {i.title}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ height: 'calc(100vh - 320px)', minHeight: '500px' }}>
+      {/* ─── Workspace ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ height: 'calc(100vh - 360px)', minHeight: '520px' }}>
         {/* Student List */}
         <div className={`card overflow-hidden flex-col ${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'}`}>
-          <div className="p-3 border-b border-dark-200 dark:border-dark-700">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm text-dark-800 dark:text-dark-200 flex items-center gap-2">
-                <FiUsers size={14} /> Students
-                <span className="text-xs text-dark-400 font-normal">({students.length})</span>
+          <div className="p-4 border-b border-dark-100 dark:border-dark-700 bg-gradient-to-b from-dark-50/60 to-transparent dark:from-dark-800/40">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm text-dark-800 dark:text-dark-100 flex items-center gap-2">
+                <FiUsers size={15} className="text-primary-500" /> Students
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">{students.length}</span>
               </h3>
+              {totalUnread > 0 && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-500 text-white shadow-sm">{totalUnread} new</span>
+              )}
             </div>
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" size={14} />
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" size={15} />
               <input
                 value={searchStudent}
                 onChange={e => setSearchStudent(e.target.value)}
-                className="input-field pl-8 py-1.5 text-sm w-full"
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-xl bg-dark-50 dark:bg-dark-900/50 border border-dark-200 dark:border-dark-600 text-dark-800 dark:text-dark-100 placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-400 transition-all"
                 placeholder="Search student..."
               />
             </div>
@@ -207,57 +293,102 @@ const TrainerDiscussion = () => {
 
           <div className="flex-1 overflow-y-auto">
             {loading ? (
-              <div className="flex items-center justify-center py-8"><FiRefreshCw size={18} className="animate-spin text-primary-500" /></div>
+              <div className="p-3 space-y-2">
+                {[...Array(4)].map((_, k) => (
+                  <div key={k} className="flex items-center gap-3 p-2 animate-pulse">
+                    <div className="w-11 h-11 rounded-full bg-dark-200 dark:bg-dark-700" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-2/3 bg-dark-200 dark:bg-dark-700 rounded" />
+                      <div className="h-2.5 w-1/2 bg-dark-100 dark:bg-dark-700/60 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : filteredStudents.length === 0 ? (
-              <div className="p-6 text-center text-dark-400 text-sm">No students found</div>
+              <div className="h-full flex flex-col items-center justify-center text-center px-6 py-10">
+                <div className="w-14 h-14 rounded-2xl bg-dark-100 dark:bg-dark-700 flex items-center justify-center mb-3">
+                  <FiUsers size={24} className="text-dark-400" />
+                </div>
+                <p className="text-sm font-semibold text-dark-600 dark:text-dark-300">
+                  {searchStudent ? 'No matching students' : 'No students yet'}
+                </p>
+                <p className="text-xs text-dark-400 mt-1 max-w-[220px]">
+                  {searchStudent ? 'Try a different name or email.' : 'Students assigned to this program will show up here.'}
+                </p>
+              </div>
             ) : (
-              filteredStudents.map(student => {
-                const online = isUserOnline(student._id);
-                const unread = getUnread(student._id);
-                const isActive = selectedStudent?._id === student._id;
+              <div className="p-2 space-y-1">
+                {filteredStudents.map(student => {
+                  const online = isUserOnline(student._id);
+                  const unread = getUnread(student._id);
+                  const isActive = selectedStudent?._id === student._id;
 
-                return (
-                  <button
-                    key={student._id}
-                    onClick={() => openChat(student)}
-                    className={`w-full text-left px-4 py-3 border-b border-dark-100 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-700/50 transition-colors ${isActive ? 'bg-primary-50 dark:bg-primary-900/20 border-l-2 border-l-primary-500' : ''}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex-shrink-0">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${isActive ? 'bg-primary-500 text-white' : 'bg-dark-200 dark:bg-dark-600 text-dark-600 dark:text-dark-300'}`}>
-                          {getStudentName(student)[0]}
-                        </div>
-                        {online && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-dark-800" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <p className={`text-sm font-medium truncate ${isActive ? 'text-primary-700 dark:text-primary-400' : 'text-dark-800 dark:text-dark-200'}`}>
-                            {getStudentName(student)}
-                          </p>
-                          <span className="text-[10px] text-dark-400 flex-shrink-0 ml-2">{timeAgo(getLastMessageAt(student._id))}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 mt-0.5">
-                          <p className={`text-xs truncate ${unread > 0 ? 'text-dark-700 dark:text-dark-200 font-medium' : 'text-dark-400'}`}>
-                            {getPreview(student._id)}
-                          </p>
-                          {unread > 0 && (
-                            <span className="flex-shrink-0 px-1.5 py-0.5 min-w-[20px] text-center bg-primary-500 text-white text-[10px] font-bold rounded-full">{unread}</span>
+                  return (
+                    <button
+                      key={student._id}
+                      onClick={() => openChat(student)}
+                      className={`group relative w-full text-left rounded-xl p-2.5 transition-all duration-200 ${
+                        isActive
+                          ? 'bg-gradient-to-r from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-primary-900/10 ring-1 ring-primary-200 dark:ring-primary-800/60'
+                          : 'hover:bg-dark-50 dark:hover:bg-dark-700/50'
+                      }`}
+                    >
+                      {/* active accent bar */}
+                      <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-r-full bg-gradient-to-b from-primary-500 to-indigo-500 transition-all ${isActive ? 'h-8' : 'h-0'}`} />
+
+                      <div className="flex items-center gap-3">
+                        <div className="relative flex-shrink-0">
+                          <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm shadow-sm transition-all ${
+                            isActive
+                              ? 'bg-gradient-to-br from-primary-600 to-indigo-500 text-white ring-2 ring-white dark:ring-dark-700'
+                              : 'bg-dark-100 dark:bg-dark-700 text-dark-600 dark:text-dark-200'
+                          }`}>
+                            {getStudentName(student)[0]}
+                          </div>
+                          {online && (
+                            <span className="absolute -bottom-0.5 -right-0.5 flex w-3.5 h-3.5">
+                              <span className="absolute inline-flex w-full h-full rounded-full bg-green-400 opacity-75 animate-ping" />
+                              <span className="relative inline-flex w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-white dark:border-dark-800" />
+                            </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-dark-400 truncate">{student.collegeName || student.email}{online ? ' · Online' : ''}</p>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className={`text-sm font-semibold truncate ${isActive ? 'text-primary-700 dark:text-primary-300' : 'text-dark-800 dark:text-dark-100'}`}>
+                              {getStudentName(student)}
+                            </p>
+                            <span className="text-[10px] text-dark-400 flex-shrink-0">{timeAgo(getLastMessageAt(student._id))}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 mt-0.5">
+                            <p className={`text-xs truncate ${unread > 0 ? 'text-dark-700 dark:text-dark-200 font-medium' : 'text-dark-400'}`}>
+                              {getPreview(student._id)}
+                            </p>
+                            {unread > 0 && (
+                              <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 grid place-items-center bg-gradient-to-br from-rose-500 to-red-500 text-white text-[10px] font-bold rounded-full shadow-sm">{unread}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {online ? (
+                              <span className="text-[10px] font-medium text-green-600 dark:text-green-400">Online</span>
+                            ) : (
+                              <span className="text-[10px] text-dark-400 truncate">{student.collegeName || student.email}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <FiArrowRight size={15} className={`flex-shrink-0 transition-all ${isActive ? 'text-primary-500 opacity-100' : 'text-dark-300 dark:text-dark-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5'}`} />
                       </div>
-                    </div>
-                  </button>
-                );
-              })
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
 
         {/* Chat Area */}
-        <div className={`lg:col-span-2 ${mobileView === 'list' ? 'hidden lg:block' : 'block'}`}>
+        <div className={`lg:col-span-2 min-h-0 ${mobileView === 'list' ? 'hidden lg:block' : 'block'}`}>
           {selectedConversation && selectedStudent ? (
             <ChatPanel
               conversation={selectedConversation}
@@ -266,11 +397,24 @@ const TrainerDiscussion = () => {
               onBack={() => setMobileView('list')}
             />
           ) : (
-            <div className="h-full flex items-center justify-center card">
-              <div className="text-center text-dark-400">
-                <FiMessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium">Select a student to start chatting</p>
-                <p className="text-sm mt-1">Choose an internship and click on a student</p>
+            <div className="h-full rounded-2xl border border-dark-100 dark:border-dark-700 bg-white dark:bg-dark-800 shadow-card overflow-hidden relative flex items-center justify-center">
+              <div className="pointer-events-none absolute -top-16 -right-16 w-64 h-64 rounded-full bg-primary-100/60 dark:bg-primary-900/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-20 -left-16 w-64 h-64 rounded-full bg-secondary-100/60 dark:bg-secondary-900/10 blur-3xl" />
+
+              <div className="relative text-center px-8 py-10 max-w-sm">
+                <div className="mx-auto w-20 h-20 rounded-3xl bg-gradient-to-br from-primary-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-primary-500/30 mb-5">
+                  <FiMessageSquare size={34} className="text-white" />
+                </div>
+                <h3 className="text-lg font-bold text-dark-800 dark:text-white font-display">
+                  {selectedInternshipData ? `Discuss ${selectedInternshipData.title}` : 'Start a conversation'}
+                </h3>
+                <p className="text-sm text-dark-500 dark:text-dark-400 mt-1.5 leading-relaxed">
+                  Pick a student on the left to open your chat. Share files, pin important updates and guide your interns in real time.
+                </p>
+                <div className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-dark-50 dark:bg-dark-700/60 text-dark-500 dark:text-dark-300 text-xs font-medium border border-dark-100 dark:border-dark-600">
+                  <FiSmile size={14} className="text-primary-500" />
+                  {students.length} student{students.length === 1 ? '' : 's'} in this program
+                </div>
               </div>
             </div>
           )}

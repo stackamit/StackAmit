@@ -697,10 +697,10 @@ const ChatPanel = ({ conversation, otherUser, otherUserOnline, onBack }) => {
         </div>
       )}
 
-      {/* Input area (WhatsApp style pill) */}
-      <div className="px-3 sm:px-4 py-3 bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700">
-        <div className="flex items-end gap-2">
-          <div className="flex-1 flex items-end gap-1 bg-dark-50 dark:bg-dark-700 rounded-2xl px-2 py-1 border border-dark-200 dark:border-dark-600 focus-within:ring-2 focus-within:ring-primary-500/40 transition-shadow">
+      {/* Input area (WhatsApp style pill) — responsive */}
+      <div className="px-2.5 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700">
+        <div className="flex items-end gap-1.5 sm:gap-2">
+          <div className="flex-1 min-w-0 flex items-end gap-0.5 sm:gap-1 bg-dark-50 dark:bg-dark-700 rounded-2xl px-1.5 sm:px-2 py-1 border border-dark-200 dark:border-dark-600 focus-within:ring-2 focus-within:ring-primary-500/40 transition-shadow">
             {/* Emoji picker */}
             <div className="relative flex-shrink-0">
               <button onClick={() => setShowEmoji(!showEmoji)} className={`p-2 transition-colors rounded-full ${showEmoji ? 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20' : 'text-dark-400 hover:text-yellow-500'}`} title="Emoji">
@@ -709,11 +709,12 @@ const ChatPanel = ({ conversation, otherUser, otherUserOnline, onBack }) => {
               {showEmoji && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowEmoji(false)} />
-                  <div className="absolute bottom-12 left-0 z-50">
+                  <div className="absolute bottom-12 left-0 z-50 max-w-[calc(100vw-2rem)]">
                     <EmojiPicker
                       onEmojiClick={(e) => { setNewMessage(prev => prev + e.emoji); inputRef.current?.focus(); }}
-                      width={300}
-                      height={350}
+                      dynamicWidth
+                      dynamicWidthConfig={{ minimum: 240, maximum: 320 }}
+                      height={320}
                       previewConfig={{ showPreview: false }}
                       theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}
                     />
@@ -729,7 +730,7 @@ const ChatPanel = ({ conversation, otherUser, otherUserOnline, onBack }) => {
               onChange={e => setNewMessage(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
-              className="flex-1 resize-none bg-transparent py-2 text-sm outline-none text-dark-800 dark:text-dark-200 placeholder-dark-400 max-h-28 min-h-[24px]"
+              className="flex-1 min-w-0 resize-none bg-transparent py-2 text-sm outline-none text-dark-800 dark:text-dark-200 placeholder-dark-400 max-h-28 min-h-[24px]"
               rows={1}
             />
 
@@ -744,7 +745,7 @@ const ChatPanel = ({ conversation, otherUser, otherUserOnline, onBack }) => {
           <button
             onClick={handleSend}
             disabled={!newMessage.trim() || sending}
-            className="flex-shrink-0 w-11 h-11 flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-500 text-white rounded-full hover:from-primary-700 hover:to-primary-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all active:scale-95"
+            className="flex-shrink-0 w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-500 text-white rounded-full hover:from-primary-700 hover:to-primary-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all active:scale-95"
             title="Send message"
           >
             {sending ? <FiRefreshCw size={17} className="animate-spin" /> : <FiSend size={17} className="translate-x-[1px] -translate-y-[1px]" />}

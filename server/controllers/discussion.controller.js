@@ -9,13 +9,34 @@ import { createNotification } from '../services/notification.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { getOnlineUsers } from '../socket/index.js';
 
+// ─── Helper: resolve internships that share the same title ──────────────────
+// Two students can be assigned to two *separate* Internship records that carry
+// the same title (e.g. two "Java Programming" cohorts). In the trainer's
+// discussion view those should be treated as ONE internship with ALL students
+// listed together. This returns every internship _id sharing the given
+// internship's title (always including the original id).
+const resolveSiblingInternshipIds = async (internshipId) => {
+  if (!internshipId) return null;
+  const base = await Internship.findById(internshipId).select('title');
+  if (!base) return [internshipId];
+  const sibs = await Internship.find({ title: base.title, isDeleted: false }).select('_id');
+  const ids = sibs.map((s) => s._id);
+  if (!ids.some((id) => id.toString() === internshipId.toString())) {
+    ids.push(internshipId);
+  }
+  return ids;
+};
+
 // ─── Get Conversations for Trainer ──────────────────────────────────────────
 export const getTrainerConversations = asyncHandler(async (req, res) => {
   const trainerId = req.user._id;
   const { internshipId } = req.query;
 
+  // Merge same-title internships so every student's conversation is returned
+  const siblingIds = internshipId ? await resolveSiblingInternshipIds(internshipId) : null;
+
   const query = { trainer: trainerId };
-  if (internshipId) query.internship = internshipId;
+  if (siblingIds) query.internship = { $in: siblingIds };
 
   let conversations = await Conversation.find(query)
     .populate('student', 'name email firstName lastName avatar collegeName course year')
@@ -26,7 +47,7 @@ export const getTrainerConversations = asyncHandler(async (req, res) => {
   // Auto-create conversations for assigned students that don't have one yet
   const existingStudentIds = new Set(conversations.map(c => c.student?._id?.toString()));
   const studentQuery = { assignedTrainer: trainerId, deletedAt: null };
-  if (internshipId) studentQuery.currentInternship = internshipId;
+  if (siblingIds) studentQuery.currentInternship = { $in: siblingIds };
 
   const assignedStudents = await Student.find(studentQuery)
     .select('name email firstName lastName avatar collegeName course year currentInternship');
@@ -378,7 +399,20 @@ export const getTrainerInternships = asyncHandler(async (req, res) => {
     isDeleted: false,
   }).select('title category status startDate endDate');
 
-  res.status(200).json({ success: true, data: { internships } });
+  // Collapse internships that share the same title into a single dropdown
+  // entry so the trainer sees one option per program (not one per cohort).
+  const grouped = new Map();
+  internships.forEach((i) => {
+    const key = (i.title || '').trim().toLowerCase();
+    if (!key) return;
+    if (!grouped.has(key)) {
+      grouped.set(key, { ...i.toObject(), ids: [i._id] });
+    } else {
+      grouped.get(key).ids.push(i._id);
+    }
+  });
+
+  res.status(200).json({ success: true, data: { internships: [...grouped.values()] } });
 });
 
 // ─── Get Students for Internship (trainer view) ─────────────────────────────
@@ -386,24 +420,28 @@ export const getInternshipStudents = asyncHandler(async (req, res) => {
   const { internshipId } = req.params;
   const trainerId = req.user._id;
 
+  // Merge same-title internships so all students across every cohort of this
+  // program are listed together under one internship.
+  const siblingIds = await resolveSiblingInternshipIds(internshipId) || [internshipId];
+
   // Find students assigned to this trainer for this internship
   let students = await Student.find({
     assignedTrainer: trainerId,
-    currentInternship: internshipId,
+    currentInternship: { $in: siblingIds },
     deletedAt: null,
-  }).select('name email firstName lastName avatar collegeName course year');
+  }).select('name email firstName lastName avatar collegeName course year currentInternship');
 
   // Also find students who have tasks in this internship assigned by this trainer
   const existingIds = new Set(students.map(s => s._id.toString()));
   const taskStudentIds = await Task.find({
     assignedBy: trainerId,
-    internshipId,
+    internshipId: { $in: siblingIds },
   }).select('assignedTo').distinct('assignedTo');
 
   const additionalStudents = await Student.find({
     _id: { $in: taskStudentIds.filter(id => !existingIds.has(id.toString())) },
     deletedAt: null,
-  }).select('name email firstName lastName avatar collegeName course year');
+  }).select('name email firstName lastName avatar collegeName course year currentInternship');
 
   students = [...students, ...additionalStudents];
 

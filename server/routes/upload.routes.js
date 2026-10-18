@@ -1,5 +1,5 @@
 import express from 'express';
-import { uploadImage, uploadDocument, uploadMultiple } from '../controllers/upload.controller.js';
+import { uploadImage, uploadDocument, uploadMultiple, listMedia } from '../controllers/upload.controller.js';
 import { protect } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 
@@ -9,5 +9,6 @@ router.use(protect);
 router.post('/image', upload.single('file'), uploadImage);
 router.post('/document', upload.single('file'), uploadDocument);
 router.post('/multiple', upload.array('files', 10), uploadMultiple);
+router.get('/media', listMedia);
 
 export default router;

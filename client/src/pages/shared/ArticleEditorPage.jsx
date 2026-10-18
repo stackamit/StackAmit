@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import {
-  FiArrowLeft, FiSave, FiUploadCloud, FiX, FiImage, FiBookOpen, FiLink,
+  FiArrowLeft, FiSave, FiUploadCloud, FiX, FiImage, FiBookOpen, FiLink, FiFolder,
 } from 'react-icons/fi';
 
 const ARTICLE_TYPES = [
@@ -36,6 +36,15 @@ const ArticleEditorPage = () => {
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(''); // 'draft' | 'publish'
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Cover image source: 'upload' | 'url' | 'media'
+  const [coverTab, setCoverTab] = useState('upload');
+  const [coverUrl, setCoverUrl] = useState('');
+
+  // Media Library (reuse already-uploaded Cloudinary assets → less storage, faster loads)
+  const [mediaList, setMediaList] = useState([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
 
   // Inline content image insertion state
   const contentRef = useRef(null);
@@ -114,6 +123,42 @@ const ArticleEditorPage = () => {
 
   const removeCover = () => {
     setForm((f) => ({ ...f, coverImage: null }));
+  };
+
+  // Lazily fetch the current user's uploaded media the first time it's needed
+  const fetchMedia = async () => {
+    if (mediaLoaded || mediaLoading) return;
+    setMediaLoading(true);
+    try {
+      const { data } = await api.get('/upload/media', { params: { limit: 60 } });
+      setMediaList(data.data?.items || []);
+      setMediaLoaded(true);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to load media library');
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const handleCoverTab = (tab) => {
+    setCoverTab(tab);
+    if (tab === 'media') fetchMedia();
+  };
+
+  const selectCoverFromMedia = (item) => {
+    setForm((f) => ({ ...f, coverImage: { public_id: item.public_id || '', url: item.url } }));
+    toast.success('Cover image selected from library');
+  };
+
+  const applyCoverUrl = () => {
+    const url = coverUrl.trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      toast.error('Enter a valid image URL starting with http(s)://');
+      return;
+    }
+    setForm((f) => ({ ...f, coverImage: { public_id: '', url } }));
+    setCoverUrl('');
+    toast.success('Cover image set from URL');
   };
 
   // Insert a Markdown image at the cursor of the content textarea,
@@ -352,22 +397,71 @@ const ArticleEditorPage = () => {
               </button>
             </div>
           ) : (
-            <label className="flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed border-dark-200 dark:border-dark-700 cursor-pointer hover:border-primary-400 dark:hover:border-primary-600 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors">
-              {uploadingImage ? (
-                <>
-                  <span className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent"></span>
-                  <span className="text-xs text-dark-500 dark:text-dark-400">Uploading...</span>
-                </>
-              ) : (
-                <>
-                  <FiImage size={24} className="text-dark-400" />
-                  <span className="text-xs text-dark-500 dark:text-dark-400">
-                    Click to upload cover image (JPG/PNG/GIF/WebP, max 5MB)
-                  </span>
-                </>
+            <div className="rounded-xl border border-dark-200 dark:border-dark-700 p-3 space-y-3">
+              {/* Source tabs */}
+              <div className="inline-flex rounded-lg bg-dark-100 dark:bg-dark-700/60 p-0.5 text-xs font-medium">
+                {[
+                  { k: 'upload', label: 'Upload', Icon: FiUploadCloud },
+                  { k: 'url', label: 'URL', Icon: FiLink },
+                  { k: 'media', label: 'From Media', Icon: FiFolder },
+                ].map(({ k, label, Icon }) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => handleCoverTab(k)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+                      coverTab === k
+                        ? 'bg-white dark:bg-dark-800 text-primary-700 dark:text-primary-300 shadow-sm'
+                        : 'text-dark-500 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-200'
+                    }`}
+                  >
+                    <Icon size={13} /> {label}
+                  </button>
+                ))}
+              </div>
+
+              {coverTab === 'upload' && (
+                <label className="flex flex-col items-center justify-center gap-2 h-28 rounded-xl border-2 border-dashed border-dark-200 dark:border-dark-700 cursor-pointer hover:border-primary-400 dark:hover:border-primary-600 hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition-colors">
+                  {uploadingImage ? (
+                    <>
+                      <span className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent"></span>
+                      <span className="text-xs text-dark-500 dark:text-dark-400">Uploading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FiImage size={24} className="text-dark-400" />
+                      <span className="text-xs text-dark-500 dark:text-dark-400">Click to upload (JPG/PNG/GIF/WebP, max 5MB)</span>
+                    </>
+                  )}
+                  <input type="file" accept="image/*" onChange={handleCoverUpload} disabled={uploadingImage} className="hidden" />
+                </label>
               )}
-              <input type="file" accept="image/*" onChange={handleCoverUpload} disabled={uploadingImage} className="hidden" />
-            </label>
+
+              {coverTab === 'url' && (
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={coverUrl}
+                    onChange={(e) => setCoverUrl(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyCoverUrl(); } }}
+                    placeholder="https://example.com/cover.jpg"
+                    className="input-field w-full text-sm"
+                  />
+                  <button type="button" onClick={applyCoverUrl} disabled={!coverUrl.trim()} className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm whitespace-nowrap disabled:opacity-50">
+                    <FiLink size={14} /> Use URL
+                  </button>
+                </div>
+              )}
+
+              {coverTab === 'media' && (
+                <MediaGrid
+                  items={mediaList}
+                  loading={mediaLoading}
+                  onPick={selectCoverFromMedia}
+                  onRefresh={() => { setMediaLoaded(false); fetchMedia(); }}
+                />
+              )}
+            </div>
           )}
         </div>
 
@@ -379,7 +473,7 @@ const ArticleEditorPage = () => {
             </label>
             <button
               type="button"
-              onClick={() => setShowImagePanel((v) => !v)}
+              onClick={() => { setShowImagePanel((v) => { const next = !v; if (next) fetchMedia(); return next; }); }}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 showImagePanel
                   ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-400'
@@ -436,6 +530,19 @@ const ArticleEditorPage = () => {
                   {uploadingContentImage ? 'Uploading...' : 'Upload PNG / Image'}
                   <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleContentImageUpload} disabled={uploadingContentImage} className="hidden" />
                 </label>
+              </div>
+
+              {/* Reuse an already-uploaded image from the Media Library */}
+              <div className="pt-1">
+                <p className="text-xs font-medium text-dark-600 dark:text-dark-300 mb-1.5 flex items-center gap-1.5">
+                  <FiFolder size={12} /> Or choose from Media Library
+                </p>
+                <MediaGrid
+                  items={mediaList}
+                  loading={mediaLoading}
+                  onPick={(item) => { insertImageMarkdown(item.url, item.folder || 'image'); setShowImagePanel(false); toast.success('Image inserted into content'); }}
+                  onRefresh={() => { setMediaLoaded(false); fetchMedia(); }}
+                />
               </div>
             </div>
           )}
@@ -514,6 +621,42 @@ const ArticleEditorPage = () => {
           Drafts are private to you. Published articles appear on the public Articles page.
         </p>
       </div>
+    </div>
+  );
+};
+
+const MediaGrid = ({ items, loading, onPick, onRefresh }) => {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="aspect-video rounded-lg bg-dark-100 dark:bg-dark-700 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+  if (!items.length) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
+        <FiFolder size={22} className="text-dark-400" />
+        <p className="text-xs text-dark-500 dark:text-dark-400">No saved media yet. Upload an image first, then reuse it here.</p>
+        <button type="button" onClick={onRefresh} className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline">Retry</button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-1">
+      {items.map((item) => (
+        <button
+          key={item.public_id || item.url}
+          type="button"
+          onClick={() => onPick(item)}
+          className="group relative aspect-video rounded-lg overflow-hidden border border-dark-200 dark:border-dark-700 hover:ring-2 hover:ring-primary-500/60 transition-all"
+          title="Use this image"
+        >
+          <img src={item.url} alt="" loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+        </button>
+      ))}
     </div>
   );
 };

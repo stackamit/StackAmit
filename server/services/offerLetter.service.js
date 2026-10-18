@@ -9,6 +9,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SIGNATURE_IMAGE_PATH = path.join(__dirname, '../assets/signature.png');
 const HAS_SIGNATURE = fs.existsSync(SIGNATURE_IMAGE_PATH);
 
+// Company logo (bundled with the server under /assets) for the letterhead
+const LOGO_IMAGE_PATH = path.join(__dirname, '../assets/logo.jpg');
+const HAS_LOGO = fs.existsSync(LOGO_IMAGE_PATH);
+
 /**
  * Fetch a fully populated application for offer letter PDF generation.
  * Includes student details (with assigned trainer) and internship details.
@@ -63,13 +67,32 @@ export const generateOfferLetterPDFBuffer = (application) => {
       doc.rect(30, 30, pageWidth - 60, pageHeight - 60).stroke();
 
       // ─── Header Section ───
-      let yPos = 60;
+      let yPos = 52;
 
-      // Brand name
-      doc.fillColor('#11998e');
-      doc.fontSize(28).font('Helvetica-Bold');
-      doc.text('STACKAMIT', leftMargin, yPos, { width: contentWidth, align: 'center' });
-      yPos += 35;
+      // Company logo (letterhead). The logo artwork already contains the
+      // "StackAmit" wordmark, so it replaces the plain brand text.
+      if (HAS_LOGO) {
+        try {
+          const logoSize = 62;
+          doc.image(LOGO_IMAGE_PATH, centerX - logoSize / 2, yPos, { fit: [logoSize, logoSize] });
+          yPos += logoSize + 6;
+        } catch (logoErr) {
+          console.error('[OfferLetter] Failed to draw logo image:', logoErr.message);
+          // Fall back to the text wordmark if the image can't be drawn
+          doc.fillColor('#11998e');
+          doc.fontSize(28).font('Helvetica-Bold');
+          doc.text('STACKAMIT', leftMargin, yPos, { width: contentWidth, align: 'center' });
+          yPos += 35;
+        }
+      } else {
+        // Brand name (text fallback when no logo asset is present)
+        doc.fillColor('#11998e');
+        doc.fontSize(28).font('Helvetica-Bold');
+        doc.text('STACKAMIT', leftMargin, yPos, { width: contentWidth, align: 'center' });
+        yPos += 35;
+      }
+
+      yPos += 6;
 
       // Tagline
       doc.fillColor('#888888');
