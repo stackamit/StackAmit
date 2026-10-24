@@ -9,10 +9,19 @@ let io;
 // Track online users: Map<userId, Set<socketId>>
 const onlineUsers = new Map();
 
+// SA-029/SA-030: CLIENT_URL may be a comma-separated list. Socket.io cannot match
+// a single "a,b,c" string against any real Origin, so normalise it into an
+// explicit allow-list array (mirrors the HTTP CORS config in server.js).
+export const parseAllowedOrigins = (raw) =>
+  String(raw || 'http://localhost:5173')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:5173',
+      origin: parseAllowedOrigins(process.env.CLIENT_URL),
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -30,7 +39,7 @@ export const initSocket = (server) => {
         return next(new Error('Authentication error: No token provided'));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       const user = await User.findById(decoded.id).select('-password');
 
       if (!user || !user.isActive) {

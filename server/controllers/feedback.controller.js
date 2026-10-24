@@ -2,18 +2,24 @@ import Feedback from '../models/Feedback.js';
 import { logActivity } from '../services/activityLog.service.js';
 import { notifyAdmins } from '../services/notification.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { literalSearchRegex } from '../utils/authz.js';
+import { normalizeFeedbackInput } from '../utils/feedbackValidation.js';
+import { scrub } from '../utils/logRedact.js';
 
 // ─── Submit Feedback (public, no auth required) ─────────────────────────────
 export const submitFeedback = asyncHandler(async (req, res) => {
   try {
-    const { name, email, subject, message, rating, type } = req.body;
-
-    if (!name || !email || !subject || !message) {
+    // SA-032: validate + normalise every accepted field, reject operator/object
+    // injection and unexpected keys, enforce length limits. Return a generic
+    // client error so the response does not help an attacker enumerate rules.
+    const parsed = normalizeFeedbackInput(req.body, { requireIdentity: true });
+    if (!parsed.ok) {
       return res.status(400).json({
         success: false,
-        message: 'Name, email, subject, and message are required.',
+        message: 'Invalid submission. Please check your details and try again.',
       });
     }
+    const { name, email, subject, message, rating, type } = parsed.value;
 
     // If user is logged in, attach their info
     let userRef = null;
@@ -28,8 +34,8 @@ export const submitFeedback = asyncHandler(async (req, res) => {
       email,
       subject,
       message,
-      rating: rating || 5,
-      type: type || 'general',
+      rating,
+      type,
       userRef,
       userType,
     });
@@ -49,7 +55,9 @@ export const submitFeedback = asyncHandler(async (req, res) => {
       data: { feedback },
     });
   } catch (err) {
-    console.error('[SubmitFeedback] Error:', err);
+    // SA-023: never dump the raw error (a Mongoose validation error can embed
+    // the whole submitted document, including the email/message).
+    console.error('[SubmitFeedback] Error:', scrub(err.message));
     res.status(500).json({ success: false, message: 'Failed to submit feedback.' });
   }
 });
@@ -57,22 +65,23 @@ export const submitFeedback = asyncHandler(async (req, res) => {
 // ─── Submit Feedback (authenticated users) ──────────────────────────────────
 export const submitAuthenticatedFeedback = asyncHandler(async (req, res) => {
   try {
-    const { subject, message, rating, type } = req.body;
-
-    if (!subject || !message) {
+    // SA-032: same field validation, minus the name/email (taken from session).
+    const parsed = normalizeFeedbackInput(req.body, { requireIdentity: false });
+    if (!parsed.ok) {
       return res.status(400).json({
         success: false,
-        message: 'Subject and message are required.',
+        message: 'Invalid submission. Please check your details and try again.',
       });
     }
+    const { subject, message, rating, type } = parsed.value;
 
     const feedback = await Feedback.create({
       name: req.user.name || 'User',
       email: req.user.email,
       subject,
       message,
-      rating: rating || 5,
-      type: type || 'general',
+      rating,
+      type,
       userRef: req.user._id,
       userType: req.user.role || 'public',
     });
@@ -93,7 +102,7 @@ export const submitAuthenticatedFeedback = asyncHandler(async (req, res) => {
       data: { feedback },
     });
   } catch (err) {
-    console.error('[SubmitAuthenticatedFeedback] Error:', err);
+    console.error('[SubmitAuthenticatedFeedback] Error:', scrub(err.message));
     res.status(500).json({ success: false, message: 'Failed to submit feedback.' });
   }
 });
@@ -113,11 +122,16 @@ export const getAllFeedback = asyncHandler(async (req, res) => {
     if (status) query.status = status;
     if (type) query.type = type;
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { subject: { $regex: search, $options: 'i' } },
-      ];
+      // SA-014: escape the term so it is matched literally (no operator/regex
+      // injection, no ReDoS). Skip the filter when the input is not usable.
+      const rx = literalSearchRegex(String(search));
+      if (rx) {
+        query.$or = [
+          { name: rx },
+          { email: rx },
+          { subject: rx },
+        ];
+      }
     }
 
     const skip = (page - 1) * limit;
@@ -143,8 +157,9 @@ export const getAllFeedback = asyncHandler(async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[GetAllFeedback] Error:', err);
-    res.status(500).json({ success: false, message: err.message, data: { feedback: [], total: 0, pages: 0, page: 1 } });
+    console.error('[GetAllFeedback] Error:', scrub(err.message));
+    // SA-033: never surface the raw driver/exception message to the client.
+    res.status(500).json({ success: false, message: 'Failed to fetch feedback', data: { feedback: [], total: 0, pages: 0, page: 1 } });
   }
 });
 
@@ -269,7 +284,7 @@ export const getFeedbackStats = asyncHandler(async (req, res) => {
       data: { total, pending, read, replied, archived, avgRating },
     });
   } catch (err) {
-    console.error('[FeedbackStats] Error:', err);
+    console.error('[FeedbackStats] Error:', scrub(err.message));
     res.status(200).json({ success: true, data: { total: 0, pending: 0, read: 0, replied: 0, archived: 0, avgRating: 0 } });
   }
 });

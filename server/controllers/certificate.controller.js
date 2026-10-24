@@ -7,6 +7,45 @@ import { sendCertificateEmail } from '../services/email.service.js';
 import { getCertificatePopulated, generateCertificatePDFBuffer, streamCertificatePDF } from '../services/certificate.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import QRCode from 'qrcode';
+import { sameId, isAdmin, literalSearchRegex } from '../utils/authz.js';
+import { redactEmail, redactId } from '../utils/logRedact.js';
+import { getClientBaseUrl } from '../utils/appUrl.js';
+
+// ─── Public verification helpers (SA-001 / SA-002) ───────────────────────────
+// Build a safe query for anonymous verification.
+// • Accepts ONLY non-empty strings (rejects operator-shaped values such as
+//   { $ne: null } / { $exists: true } that would turn into a NoSQL injection).
+// • Requires at least one usable identifier; an empty/absent query returns
+//   null so the handler answers with a generic not-found instead of matching
+//   an arbitrary first document (SA-002).
+export const buildVerifyFilter = ({ certificateNumber, verificationId } = {}) => {
+  const clean = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+  const num = clean(certificateNumber);
+  const vid = clean(verificationId);
+  if (!num && !vid) return null;
+  const filter = {};
+  if (num) filter.certificateNumber = num;
+  if (vid) filter.verificationId = vid;
+  return filter;
+};
+
+// Explicit response allow-list for public verification (SA-001).
+// Only these fields are ever serialized. Never add email, phone, DOB, college,
+// skills, resume URLs, internal ObjectIds, or the raw populated documents.
+// The verify page uses denormalized fields already stored on the certificate.
+export const buildPublicVerificationPayload = (cert) => {
+  if (!cert) return null;
+  return {
+    certificateNumber: cert.certificateNumber,
+    type: cert.type,
+    studentName: cert.studentName,
+    internshipTitle: cert.internshipTitle,
+    duration: cert.duration,
+    issuedDate: cert.issuedDate,
+    isRevoked: !!cert.isRevoked,
+    revokeReason: cert.isRevoked ? cert.revokeReason : undefined,
+  };
+};
 
 // ─── Generate Certificate ────────────────────────────────────────────────────
 export const generateCertificate = asyncHandler(async (req, res) => {
@@ -26,21 +65,38 @@ export const generateCertificate = asyncHandler(async (req, res) => {
 
   const certificateNumber = await Certificate.generateCertificateNumber();
 
-  const certificate = await Certificate.create({
-    studentId,
-    internshipId,
-    type,
-    certificateNumber,
-    studentName: student.name,
-    internshipTitle: internship.title,
-    duration: `${internship.duration.weeks} weeks`,
-    issuedBy: req.user._id,
-  });
+  // Create with a bounded retry: the unique index is the authoritative guard
+  // against the tiny TOCTOU window between the collision check and the insert.
+  let certificate;
+  let currentNumber = certificateNumber;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      certificate = await Certificate.create({
+        studentId,
+        internshipId,
+        type,
+        certificateNumber: currentNumber,
+        studentName: student.name,
+        internshipTitle: internship.title,
+        duration: `${internship.duration.weeks} weeks`,
+        issuedBy: req.user._id,
+      });
+      break;
+    } catch (err) {
+      if (err && err.code === 11000 && attempt < 5) {
+        // eslint-disable-next-line no-await-in-loop
+        currentNumber = await Certificate.generateCertificateNumber();
+        continue;
+      }
+      throw err;
+    }
+  }
 
   await createNotification({
     userId: studentId,
     title: 'Certificate Issued',
-    message: `Your certificate for "${internship.title}" has been generated. Certificate #: ${certificateNumber}`,
+    message: `Your certificate for "${internship.title}" has been generated. Certificate #: ${certificate.certificateNumber}`,
     type: 'certificate_issued',
     relatedEntity: 'certificate',
     relatedId: certificate._id,
@@ -53,17 +109,18 @@ export const generateCertificate = asyncHandler(async (req, res) => {
       try {
         const fullCertificate = await getCertificatePopulated(certificate._id);
         const pdfBuffer = fullCertificate ? await generateCertificatePDFBuffer(fullCertificate) : null;
-        const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificateNumber}`;
-        const result = await sendCertificateEmail(studentEmail, student.name, internship.title, certificateNumber, {
+        const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+        const result = await sendCertificateEmail(studentEmail, student.name, internship.title, certificate.certificateNumber, {
           type,
           issuedDate: certificate.issuedDate,
           verificationUrl,
           pdfBuffer,
         });
         if (result?.success) {
-          console.log(`[Certificate] Email ${pdfBuffer ? 'with PDF attachment ' : ''}sent to ${studentEmail} for ${certificateNumber}`);
+          // SA-023: recipient address and certificate number are PII/identifiers.
+          console.log(`[Certificate] Email ${pdfBuffer ? 'with PDF attachment ' : ''}sent to ${redactEmail(studentEmail)} for cert=${redactId(certificate.certificateNumber)}`);
         } else {
-          console.warn(`[Certificate] Email failed for ${studentEmail}:`, result?.error);
+          console.warn(`[Certificate] Email failed for ${redactEmail(studentEmail)}`);
         }
       } catch (err) {
         console.error('[Certificate] Email error:', err.message);
@@ -94,23 +151,34 @@ export const getCertificates = asyncHandler(async (req, res) => {
 
   if (req.user.role === 'student') {
     query.studentId = req.user._id;
+  } else if (req.user.role === 'trainer' && !isAdmin(req.user)) {
+    // SA-010: trainers only see certificates for students they supervise.
+    const supervised = await Student.find({ assignedTrainer: req.user._id }).select('_id');
+    query.studentId = { $in: supervised.map((s) => s._id) };
   }
   if (type) query.type = type;
   if (search) {
-    query.$or = [
-      { studentName: { $regex: search, $options: 'i' } },
-      { certificateNumber: { $regex: search, $options: 'i' } },
-      { internshipTitle: { $regex: search, $options: 'i' } },
-    ];
+    // SA-014: match the term literally; skip when not usable.
+    const rx = literalSearchRegex(String(search));
+    if (rx) {
+      query.$or = [
+        { studentName: rx },
+        { certificateNumber: rx },
+        { internshipTitle: rx },
+      ];
+    }
   }
 
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  // SA-010: clamp paging so a caller cannot request an unbounded page.
+  const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const skip = (safePage - 1) * safeLimit;
 
   const [certificates, total] = await Promise.all([
     Certificate.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(safeLimit)
       .populate('studentId', 'name email')
       .populate('internshipId', 'title category'),
     Certificate.countDocuments(query),
@@ -118,7 +186,7 @@ export const getCertificates = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: { certificates, total, pages: Math.ceil(total / limit) },
+    data: { certificates, total, pages: Math.ceil(total / safeLimit), page: safePage },
   });
 });
 
@@ -126,19 +194,21 @@ export const getCertificates = asyncHandler(async (req, res) => {
 export const verifyCertificate = asyncHandler(async (req, res) => {
   const { certificateNumber, verificationId } = req.query;
 
-  const query = {};
-  if (certificateNumber) query.certificateNumber = certificateNumber;
-  if (verificationId) query.verificationId = verificationId;
-
-  const certificate = await Certificate.findOne(query)
-    .populate('studentId', 'name email')
-    .populate('internshipId', 'title category');
-
-  if (!certificate) {
+  const filter = buildVerifyFilter({ certificateNumber, verificationId });
+  if (!filter) {
+    // Missing / empty / malformed identifier → generic not-found (never query {})
     return res.status(404).json({ success: false, message: 'Certificate not found' });
   }
 
-  if (certificate.isRevoked) {
+  const doc = await Certificate.findOne(filter).select('-pdfUrl -pdfPublicId -qrCodeData -studentId -internshipId -issuedBy');
+
+  if (!doc) {
+    return res.status(404).json({ success: false, message: 'Certificate not found' });
+  }
+
+  const certificate = buildPublicVerificationPayload(doc);
+
+  if (doc.isRevoked) {
     return res.status(200).json({
       success: true,
       data: { certificate, isRevoked: true, message: 'This certificate has been revoked' },
@@ -214,8 +284,17 @@ export const getCertificateById = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Access denied' });
   }
 
-  const frontendUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/certificate/${certificate._id}`;
-  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  // SA-010: a trainer may open a certificate only for a student they supervise.
+  if (req.user.role === 'trainer' && !isAdmin(req.user)) {
+    const owner = certificate.studentId?._id || certificate.studentId;
+    const supervised = await Student.exists({ _id: owner, assignedTrainer: req.user._id });
+    if (!supervised) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+  }
+
+  const frontendUrl = `${getClientBaseUrl()}/certificate/${certificate._id}`;
+  const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   res.status(200).json({
     success: true,
@@ -246,7 +325,7 @@ export const getCertificateByIdPublic = asyncHandler(async (req, res) => {
     internshipId: certificate.internshipId,
   };
 
-  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   res.status(200).json({
     success: true,
@@ -290,7 +369,7 @@ export const resendCertificateEmail = asyncHandler(async (req, res) => {
 
   // Generate the certificate PDF and send the email with it attached
   const pdfBuffer = await generateCertificatePDFBuffer(certificate);
-  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
   const result = await sendCertificateEmail(student.email, studentName, certificate.internshipTitle, certificate.certificateNumber, {
     type: certificate.type,
     issuedDate: certificate.issuedDate || certificate.createdAt,
@@ -319,12 +398,25 @@ export const resendCertificateEmail = asyncHandler(async (req, res) => {
 
 // ─── Get Certificate QR Code ────────────────────────────────────────────────
 export const getCertificateQR = asyncHandler(async (req, res) => {
-  const certificate = await Certificate.findById(req.params.id).select('certificateNumber verificationId');
+  const certificate = await Certificate.findById(req.params.id).select('certificateNumber verificationId studentId');
   if (!certificate) {
     return res.status(404).json({ success: false, message: 'Certificate not found' });
   }
 
-  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  // SA-010: the QR encodes the certificate number + verification link, so gate it
+  // behind the same ownership/supervision rules as the detail endpoint instead of
+  // returning it to any authenticated caller.
+  if (req.user.role === 'student' && !sameId(certificate.studentId, req.user._id)) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+  if (req.user.role === 'trainer' && !isAdmin(req.user)) {
+    const supervised = await Student.exists({ _id: certificate.studentId, assignedTrainer: req.user._id });
+    if (!supervised) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+  }
+
+  const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   const qrDataUrl = await QRCode.toDataURL(verificationUrl, {
     width: 400, margin: 2,

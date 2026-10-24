@@ -6,6 +6,7 @@ import { sendWelcomeTrainerEmail } from '../services/email.service.js';
 import { logActivity } from '../services/activityLog.service.js';
 import { createNotification, notifyAdmins } from '../services/notification.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { redactId } from '../utils/logRedact.js';
 
 // ─── Create Trainer (Admin) ──────────────────────────────────────────────────
 export const createTrainer = asyncHandler(async (req, res) => {
@@ -182,7 +183,7 @@ export const assignStudents = asyncHandler(async (req, res) => {
     { _id: { $in: studentIds } },
     studentUpdate
   );
-  console.log('[AssignStudents] Updated', updateResult.modifiedCount, 'of', studentIds.length, 'students. Trainer:', trainer._id);
+  console.log('[AssignStudents] Updated', updateResult.modifiedCount, 'of', studentIds.length, 'students. Trainer:', redactId(trainer._id));
 
   // If internship specified, update seats filled
   if (internshipId) {
@@ -311,11 +312,17 @@ export const resetTrainerPassword = asyncHandler(async (req, res) => {
   const tempPassword = generateTempPassword();
   trainer.password = tempPassword;
   trainer.mustChangePassword = true;
+  // SA-005/SA-028: invalidate any existing refresh session so a reset also logs
+  // the account out everywhere; the temp password is the only way back in.
+  trainer.refreshToken = null;
+  trainer.refreshTokenHash = null;
   await trainer.save();
 
+  // SA-028: one-time password must not be cached by browsers/proxies.
+  res.set('Cache-Control', 'no-store');
   res.status(200).json({
     success: true,
-    message: 'Password reset',
+    message: 'Password reset successfully. Share this temporary password with the trainer securely; it will not be shown again.',
     data: { tempPassword },
   });
 });

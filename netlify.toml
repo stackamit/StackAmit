@@ -19,3 +19,15 @@
   for = '/index.html'
   [headers.values]
     Cache-Control = 'public, max-age=0, must-revalidate'
+
+# SA-031: baseline hardening headers applied to every response.
+# Non-breaking for the SPA (no enforcing CSP here - see remediation report);
+# the JSON API already serves a strict CSP via helmet on the Render backend.
+[[headers]]
+  for = '/*'
+  [headers.values]
+    X-Content-Type-Options = 'nosniff'
+    X-Frame-Options = 'DENY'
+    Referrer-Policy = 'strict-origin-when-cross-origin'
+    Permissions-Policy = 'geolocation=(), microphone=(), camera=(), payment=()'
+    Strict-Transport-Security = 'max-age=31536000; includeSubDomains; preload'

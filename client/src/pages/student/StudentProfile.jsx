@@ -26,7 +26,7 @@ const StudentProfile = () => {
       const s = data.data.student;
       setForm({
         firstName: s.firstName || '', lastName: s.lastName || '', phone: s.phone || '',
-        gender: s.gender || '', dob: s.dob ? s.dob.split('T')[0] : '',
+        gender: s.gender || '', dob: s.dob ? new Date(s.dob).toISOString().split('T')[0] : '',
         collegeName: s.collegeName || '', university: s.university || '',
         course: s.course || '', branch: s.branch || '', year: s.year || '',
         address: s.address || '', city: s.city || '', state: s.state || '',
@@ -45,9 +45,21 @@ const StudentProfile = () => {
       const payload = { ...form, skills: form.skills.split(',').map(s => s.trim()).filter(Boolean) };
       const { data } = await api.put('/students/profile', payload);
       setProfileCompletion(data.data.student.profileCompletion || 0);
+      const s = data.data.student;
+      if (s?.name) {
+        const updatedUser = { ...user, name: s.name };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-    } catch (err) { setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update' }); }
+    } catch (err) {
+      const d = err.response?.data;
+      const fieldText = Array.isArray(d?.errors) && d.errors.length
+        ? ` ${d.errors.map(e => e.message).join('. ')}`
+        : '';
+      setMessage({ type: 'error', text: `${d?.message || 'Failed to update'}${fieldText}` });
+    }
     finally { setSaving(false); }
   };
 

@@ -18,6 +18,9 @@ const STORAGE_PREFIX = 'sa_api_';
 const CACHE_RULES = [
   { pattern: /^\/internships(\?|\/|$)/, ttl: 3 * 60 * 1000 },      // 3 min
   { pattern: /^\/articles(\?|\/|$)/, ttl: 3 * 60 * 1000 },          // 3 min
+  // Public notices cache briefly so scheduled/expired notices
+  // disappear on their own even without a manual mutation
+  { pattern: /^\/notices(\?|\/|$)/, ttl: 2 * 60 * 1000 },           // 2 min
   { pattern: /^\/certificates(\?|\/|$)/, ttl: 2 * 60 * 1000 },      // 2 min
   { pattern: /^\/students(\?|\/|$)/, ttl: 2 * 60 * 1000 },          // 2 min
   { pattern: /^\/trainers(\?|\/|$)/, ttl: 5 * 60 * 1000 },          // 5 min

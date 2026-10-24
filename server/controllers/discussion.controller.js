@@ -8,6 +8,8 @@ import Task from '../models/Task.js';
 import { createNotification } from '../services/notification.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { getOnlineUsers } from '../socket/index.js';
+import { sameId, canAccessConversation, literalSearchRegex } from '../utils/authz.js';
+import { redactId } from '../utils/logRedact.js';
 
 // ─── Helper: resolve internships that share the same title ──────────────────
 // Two students can be assigned to two *separate* Internship records that carry
@@ -144,6 +146,13 @@ export const getOrCreateConversation = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Student not found' });
   }
 
+  // SA-009: a trainer may only open/engage a conversation with a student who is
+  // actually assigned to them. Without this, any authenticated trainer could
+  // create (and then read, via getMessages) a private thread with any student.
+  if (!sameId(student.assignedTrainer, trainerId)) {
+    return res.status(403).json({ success: false, message: 'Student is not assigned to you' });
+  }
+
   // Find or create conversation
   let conversation = await Conversation.findOne({
     internship: internshipId,
@@ -188,7 +197,7 @@ export const getMessages = asyncHandler(async (req, res) => {
 
   const conversation = await Conversation.findById(conversationId);
   if (!conversation) {
-    console.log(`[getMessages] Conversation ${conversationId} not found`);
+    console.log(`[getMessages] Conversation ${redactId(conversationId)} not found`);
     return res.status(404).json({ success: false, message: 'Conversation not found' });
   }
 
@@ -197,7 +206,6 @@ export const getMessages = asyncHandler(async (req, res) => {
   const trainerId = conversation.trainer?.toString();
   const studentId = conversation.student?.toString();
   const uidStr = uid.toString();
-  console.log(`[getMessages] user=${uidStr} role=${req.user.role} conv.trainer=${trainerId} conv.student=${studentId}`);
 
   const hasAccess = (
     trainerId === uidStr ||
@@ -205,13 +213,16 @@ export const getMessages = asyncHandler(async (req, res) => {
     req.user.role === 'admin'
   );
   if (!hasAccess) {
-    console.log(`[getMessages] ACCESS DENIED for user ${uidStr} (role=${req.user.role})`);
+    // SA-023: redact the identifier; role is not PII.
+    console.log(`[getMessages] ACCESS DENIED for user ${redactId(uidStr)} (role=${req.user.role})`);
     return res.status(403).json({ success: false, message: 'Not authorized' });
   }
 
   const query = { conversation: conversationId, deleted: false };
   if (search) {
-    query.message = { $regex: search, $options: 'i' };
+    // SA-014: escape the term and force a literal match (no operator injection).
+    const rx = literalSearchRegex(search);
+    if (rx) query.message = rx;
   }
   if (pinned === 'true') query.isPinned = true;
   if (important === 'true') query.isImportant = true;
@@ -228,7 +239,7 @@ export const getMessages = asyncHandler(async (req, res) => {
     Message.countDocuments(query),
   ]);
 
-  console.log(`[getMessages] conv=${conversationId} user=${uid} found=${total} messages`);
+  console.log(`[getMessages] conv=${redactId(conversationId)} found=${total} messages`);
 
   // Mark messages as read
   await Message.updateMany(
@@ -265,11 +276,9 @@ export const sendMessage = asyncHandler(async (req, res) => {
   const { conversationId } = req.params;
   const { message, messageType, attachment, replyTo } = req.body;
 
-  console.log(`[sendMessage] conv=${conversationId} user=${req.user._id} role=${req.user.role}`);
-
   const conversation = await Conversation.findById(conversationId);
   if (!conversation) {
-    console.log(`[sendMessage] Conversation ${conversationId} not found`);
+    console.log(`[sendMessage] Conversation ${redactId(conversationId)} not found`);
     return res.status(404).json({ success: false, message: 'Conversation not found' });
   }
 
@@ -278,7 +287,6 @@ export const sendMessage = asyncHandler(async (req, res) => {
   const uidStr = uid.toString();
   const trainerId = conversation.trainer?.toString();
   const studentId = conversation.student?.toString();
-  console.log(`[sendMessage] access check: uid=${uidStr} conv.trainer=${trainerId} conv.student=${studentId}`);
 
   const hasAccess = (
     trainerId === uidStr ||
@@ -286,7 +294,8 @@ export const sendMessage = asyncHandler(async (req, res) => {
     req.user.role === 'admin'
   );
   if (!hasAccess) {
-    console.log(`[sendMessage] ACCESS DENIED for user ${uidStr} (role=${req.user.role})`);
+    // SA-023: redact the identifier; role is not PII.
+    console.log(`[sendMessage] ACCESS DENIED for user ${redactId(uidStr)} (role=${req.user.role})`);
     return res.status(403).json({ success: false, message: 'Not authorized' });
   }
 
@@ -309,7 +318,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
     attachment,
     replyTo,
   });
-  console.log(`[REST sendMessage] Message ${msg._id} created in conv ${conversationId} by ${uid}`);
+  console.log(`[REST sendMessage] Message created in conv ${redactId(conversationId)}`);
 
   // Update conversation
   conversation.lastMessage = msg._id;
@@ -498,7 +507,7 @@ export const getAdminConversations = asyncHandler(async (req, res) => {
         existingPairs.add(key);
       } catch (err) {
         // Duplicate key error - skip
-        console.log('[AutoCreate] Conversation already exists for', student._id);
+        console.log('[AutoCreate] Conversation already exists for', redactId(student._id));
       }
     }
   }
@@ -593,6 +602,16 @@ export const deleteMessage = asyncHandler(async (req, res) => {
 export const getPinnedMessages = asyncHandler(async (req, res) => {
   const { conversationId } = req.params;
 
+  // SA-011: pinned messages belong to a private thread — enforce the same
+  // membership check as getMessages before returning them.
+  const conversation = await Conversation.findById(conversationId);
+  if (!conversation) {
+    return res.status(404).json({ success: false, message: 'Conversation not found' });
+  }
+  if (!canAccessConversation(req.user, conversation)) {
+    return res.status(403).json({ success: false, message: 'Not authorized' });
+  }
+
   const messages = await Message.find({
     conversation: conversationId,
     isPinned: true,
@@ -607,7 +626,24 @@ export const getPinnedMessages = asyncHandler(async (req, res) => {
 // ─── Get Online Users ───────────────────────────────────────────────────────
 export const getOnlineUsersList = asyncHandler(async (req, res) => {
   const onlineUsers = getOnlineUsers();
-  const userIds = Array.from(onlineUsers.keys());
+  let userIds = Array.from(onlineUsers.keys());
+
+  // SA-026: presence is scoped. A non-admin only learns which of the users they
+  // actually share a conversation with are online, instead of the full platform
+  // user-id presence map.
+  if (req.user.role !== 'admin') {
+    const convs = await Conversation.find({
+      $or: [{ trainer: req.user._id }, { student: req.user._id }],
+    }).select('trainer student');
+
+    const peers = new Set([String(req.user._id)]);
+    convs.forEach((c) => {
+      if (c.trainer) peers.add(String(c.trainer?._id ?? c.trainer));
+      if (c.student) peers.add(String(c.student?._id ?? c.student));
+    });
+
+    userIds = userIds.filter((id) => peers.has(String(id)));
+  }
 
   res.status(200).json({
     success: true,

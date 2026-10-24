@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 const otpSchema = new mongoose.Schema(
   {
@@ -35,10 +36,10 @@ const otpSchema = new mongoose.Schema(
 otpSchema.index({ email: 1, purpose: 1 });
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-// Generate 6-digit OTP
-otpSchema.statics.generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-};
+// Generate 6-digit OTP (SA-017): cryptographically secure randomness.
+// Math.random() is a predictable PRNG and must never be used for security
+// tokens. crypto.randomInt is uniformly distributed over an unguessable range.
+otpSchema.statics.generateOTP = () => crypto.randomInt(100000, 1000000).toString();
 
 const OTP = mongoose.model('OTP', otpSchema);
 export default OTP;

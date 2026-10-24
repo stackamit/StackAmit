@@ -8,6 +8,8 @@ import {
   verifyRefreshToken,
   setTokenCookies,
   clearTokenCookies,
+  hashToken,
+  isRefreshTokenValid,
 } from '../services/auth.service.js';
 import {
   sendWelcomeStudentEmail,
@@ -19,6 +21,7 @@ import { logActivity } from '../services/activityLog.service.js';
 import { createNotification } from '../services/notification.service.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinary.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { redactEmail } from '../utils/logRedact.js';
 
 // ─── Register (Student Only) ─────────────────────────────────────────────────
 export const register = asyncHandler(async (req, res) => {
@@ -27,7 +30,13 @@ export const register = asyncHandler(async (req, res) => {
   // Check if user exists
   const existingUser = await User.findOne({ email });
   if (existingUser) {
-    return res.status(409).json({ success: false, message: 'Email already registered' });
+    // SA-019: respond identically to the success path so this endpoint cannot be
+    // used to enumerate which emails are already registered. No duplicate account
+    // or OTP is created.
+    return res.status(201).json({
+      success: true,
+      message: 'Registration successful. Please verify your email with the OTP sent.',
+    });
   }
 
   // Generate OTP
@@ -74,7 +83,6 @@ export const register = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Registration successful. Please verify your email with the OTP sent.',
-    data: { studentId: student._id, email: student.email },
   });
 });
 
@@ -133,32 +141,30 @@ export const resendOTP = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
   const student = await Student.findOne({ email });
-  if (!student) {
-    return res.status(404).json({ success: false, message: 'Student not found' });
+
+  // Only send a fresh OTP when there is a real, unverified account waiting on
+  // one. Otherwise silently do nothing but still return the generic response.
+  if (student && !student.isVerified) {
+    // Delete any existing unverified OTPs for this email
+    await OTP.deleteMany({ email, purpose: 'registration', verified: false });
+
+    // Generate new OTP
+    const otp = OTP.generateOTP();
+    await OTP.create({
+      email,
+      otp,
+      purpose: 'registration',
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
+
+    await sendOTPEmail(email, otp, 'registration');
   }
 
-  if (student.isVerified) {
-    return res.status(400).json({ success: false, message: 'Email is already verified' });
-  }
-
-  // Delete any existing unverified OTPs for this email
-  await OTP.deleteMany({ email, purpose: 'registration', verified: false });
-
-  // Generate new OTP
-  const otp = OTP.generateOTP();
-  await OTP.create({
-    email,
-    otp,
-    purpose: 'registration',
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-  });
-
-  // Send OTP email
-  await sendOTPEmail(email, otp, 'registration');
-
+  // SA-019: a single generic response for every outcome (not-found / already
+  // verified / sent) so the endpoint cannot enumerate account state.
   res.status(200).json({
     success: true,
-    message: 'A new OTP has been sent to your email.',
+    message: 'If the account exists and still needs verification, a new OTP has been sent to your email.',
   });
 });
 
@@ -188,8 +194,9 @@ export const login = asyncHandler(async (req, res) => {
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
-  // Save refresh token
-  user.refreshToken = refreshToken;
+  // Save refresh token (SA-021: store only the SHA-256 digest, never the raw JWT)
+  user.refreshTokenHash = hashToken(refreshToken);
+  user.refreshToken = null;
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
@@ -230,7 +237,9 @@ export const refreshToken = asyncHandler(async (req, res) => {
   }
 
   const user = await User.findById(decoded.id);
-  if (!user || user.refreshToken !== token) {
+  // SA-021: verify against the stored digest (or legacy plaintext during the
+  // backward-compatible transition).
+  if (!user || !isRefreshTokenValid(user, token)) {
     clearTokenCookies(res);
     return res.status(401).json({ success: false, message: 'Invalid refresh token' });
   }
@@ -243,7 +252,9 @@ export const refreshToken = asyncHandler(async (req, res) => {
   const newAccessToken = generateAccessToken(user);
   const newRefreshToken = generateRefreshToken(user);
 
-  user.refreshToken = newRefreshToken;
+  // SA-021: rotation persists only the digest; plaintext is dropped.
+  user.refreshTokenHash = hashToken(newRefreshToken);
+  user.refreshToken = null;
   await user.save({ validateBeforeSave: false });
 
   setTokenCookies(res, newAccessToken, newRefreshToken);
@@ -259,6 +270,7 @@ export const logout = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (user) {
     user.refreshToken = null;
+    user.refreshTokenHash = null;
     await user.save({ validateBeforeSave: false });
   }
 
@@ -332,6 +344,10 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   user.password = newPassword;
   user.mustChangePassword = false;
+  // SA-005/SA-021: rotate credentials — invalidate any existing refresh token
+  // (digest included) so all previously-issued sessions re-authenticate.
+  user.refreshToken = null;
+  user.refreshTokenHash = null;
   await user.save();
 
   await logActivity({
@@ -342,14 +358,15 @@ export const resetPassword = asyncHandler(async (req, res) => {
     req,
   });
 
-  // Email the login email + new password to the user (non-blocking - don't fail the reset if email fails)
+  // Send a security notice (never the password itself - SA-005).
+  // Non-blocking: don't fail the reset if email delivery fails.
   (async () => {
     try {
-      const result = await sendPasswordResetSuccessEmail(user.email, user.name, user.email, newPassword);
+      const result = await sendPasswordResetSuccessEmail(user.email, user.name, user.email);
       if (result?.success) {
-        console.log(`[Auth] Password reset confirmation email sent to ${user.email}`);
+        console.log(`[Auth] Password reset confirmation email sent to ${redactEmail(user.email)}`);
       } else {
-        console.warn(`[Auth] Password reset email failed for ${user.email}:`, result?.error);
+        console.warn(`[Auth] Password reset email failed for ${redactEmail(user.email)}`);
       }
     } catch (err) {
       console.error('[Auth] Password reset email error:', err.message);
@@ -358,7 +375,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: 'Password reset successfully. A copy of your new password has been emailed to you. Please login with your new password.',
+    message: 'Password reset successfully. Please login with your new password.',
   });
 });
 
@@ -424,7 +441,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
     req.user._id,
     { $set: updates },
     { new: true, runValidators: true }
-  ).select('-password -refreshToken');
+  ).select('-password -refreshToken -refreshTokenHash');
 
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });

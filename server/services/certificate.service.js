@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import Certificate from '../models/Certificate.js';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
+import { getClientBaseUrl } from '../utils/appUrl.js';
 
 // Authorized signature image — same asset used on offer letters (server/assets)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -241,7 +242,7 @@ export const generateCertificatePDFBuffer = (certificate) => {
 
       const pageWidth = doc.page.width;
       const pageHeight = doc.page.height;
-      const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+      const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
       // Generate QR first (async), then render everything synchronously
       QRCode.toDataURL(verificationUrl, { width: 200, margin: 1, color: { dark: '#1e3a5f', light: '#ffffff' } })
@@ -273,7 +274,7 @@ export const streamCertificatePDF = async (certificate, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   doc.pipe(res);
 
-  const verificationUrl = `${process.env.CLIENT_URL || 'https://stackamit.netlify.app'}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
+  const verificationUrl = `${getClientBaseUrl()}/verify-certificate?certificateNumber=${certificate.certificateNumber}`;
 
   try {
     const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 200, margin: 1, color: { dark: '#1e3a5f', light: '#ffffff' } });

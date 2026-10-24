@@ -7,6 +7,8 @@ import { createNotification, notifyAdmins } from '../services/notification.servi
 import { sendOfferLetterEmail } from '../services/email.service.js';
 import { getIO } from '../socket/index.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { canViewInternshipApplicants } from '../utils/authz.js';
+import { redactEmail } from '../utils/logRedact.js';
 import { getOfferLetterApplication, generateOfferLetterPDFBuffer } from '../services/offerLetter.service.js';
 
 // ─── Apply for Internship ────────────────────────────────────────────────────
@@ -87,11 +89,9 @@ export const applyForInternship = asyncHandler(async (req, res) => {
 
 // ─── Get My Applications (Student) ───────────────────────────────────────────
 export const getMyApplications = asyncHandler(async (req, res) => {
-  console.log('[getMyApplications] User ID:', req.user._id, 'Role:', req.user.role);
   const applications = await Application.find({ studentId: req.user._id })
     .populate('internshipId', 'title category status deadline duration seats')
     .sort({ createdAt: -1 });
-  console.log('[getMyApplications] Found', applications.length, 'applications for user', req.user._id);
 
   res.status(200).json({ success: true, data: { applications } });
 });
@@ -158,6 +158,18 @@ export const getAllApplications = asyncHandler(async (req, res) => {
 export const getInternshipApplications = asyncHandler(async (req, res) => {
   const { internshipId } = req.params;
   const { status } = req.query;
+
+  // SA-013: object-level authorization. A trainer may read applicants only for
+  // internships they created or are assigned to; admins may read any. Without
+  // this any authenticated trainer could enumerate every applicant's PII
+  // (name/email/college/skills) by swapping the internshipId.
+  const internship = await Internship.findById(internshipId).select('createdBy assignedTrainer');
+  if (!internship || internship.isDeleted) {
+    return res.status(404).json({ success: false, message: 'Internship not found' });
+  }
+  if (!canViewInternshipApplicants(req.user, internship)) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
 
   const query = { internshipId };
   if (status) query.status = status;
@@ -278,9 +290,10 @@ export const approveApplication = asyncHandler(async (req, res) => {
           application.reviewedAt
         );
         if (result?.success) {
-          console.log(`[OfferLetter] Email ${pdfBuffer ? 'with PDF attachment ' : ''}sent to ${studentEmail} for "${application.internshipId.title}"`);
+          // SA-023: recipient address is PII.
+          console.log(`[OfferLetter] Email ${pdfBuffer ? 'with PDF attachment ' : ''}sent to ${redactEmail(studentEmail)}`);
         } else {
-          console.warn(`[OfferLetter] Email failed for ${studentEmail}:`, result?.error);
+          console.warn(`[OfferLetter] Email failed for ${redactEmail(studentEmail)}`);
         }
       } catch (err) {
         console.error('[OfferLetter] Email error:', err.message);

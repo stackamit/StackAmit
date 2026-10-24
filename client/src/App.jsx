@@ -42,6 +42,7 @@ import AdminDiscussion from './pages/admin/AdminDiscussion';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminFeedback from './pages/admin/AdminFeedback';
 import AdminOfferLetters from './pages/admin/AdminOfferLetters';
+import AdminNotices from './pages/admin/AdminNotices';
 import AdminProfile from './pages/admin/AdminProfile';
 
 // Trainer Pages
@@ -154,6 +155,7 @@ function App() {
           <Route path="assignments" element={<AdminAssignments />} />
           <Route path="applications" element={<AdminApplications />} />
           <Route path="offer-letters" element={<AdminOfferLetters />} />
+          <Route path="notices" element={<AdminNotices />} />
           <Route path="articles" element={<MyArticlesPage />} />
           <Route path="articles/new" element={<ArticleEditorPage />} />
           <Route path="articles/edit/:id" element={<ArticleEditorPage />} />

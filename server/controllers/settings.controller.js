@@ -33,7 +33,12 @@ export const getSettings = asyncHandler(async (req, res) => {
 
 // ─── Get Setting by Key ──────────────────────────────────────────────────────
 export const getSettingByKey = asyncHandler(async (req, res) => {
-  const setting = await Setting.findOne({ key: req.params.key });
+  // SA-008: non-admins may only read public settings, mirroring getSettings.
+  const filter = { key: req.params.key };
+  if (req.user.role !== 'admin') {
+    filter.isPublic = true;
+  }
+  const setting = await Setting.findOne(filter);
   if (!setting) {
     return res.status(404).json({ success: false, message: 'Setting not found' });
   }

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { FiMail, FiPhone, FiMapPin, FiSend } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import useSiteSettings from '../../hooks/useSiteSettings';
+import NoticeSection from '../../components/NoticeSection';
 
 const ContactPage = () => {
   const { settings } = useSiteSettings();
@@ -70,6 +71,13 @@ const ContactPage = () => {
           </motion.form>
         </div>
       </div>
+
+      {/* Notices relevant to contact / service availability */}
+      <NoticeSection
+        page="contact"
+        title="Notices & Announcements"
+        limit={6}
+      />
     </div>
   );
 };

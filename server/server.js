@@ -19,6 +19,7 @@ import { connectDB } from './config/db.js';
 import { seedAdmin } from './config/seedAdmin.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { initSocket } from './socket/index.js';
+import { evaluateCookieSecret } from './utils/secrets.js';
 
 import Internship from './models/Internship.js';
 
@@ -42,6 +43,7 @@ import uploadRoutes from './routes/upload.routes.js';
 import discussionRoutes from './routes/discussion.routes.js';
 import feedbackRoutes from './routes/feedback.routes.js';
 import articleRoutes from './routes/article.routes.js';
+import noticeRoutes from './routes/notice.routes.js';
 
 const app = express();
 const server = createServer(app);
@@ -67,7 +69,31 @@ app.set('trust proxy', 1);
 // Security Middleware
 // ─────────────────────────────────────────────
 
-app.use(helmet());
+// SA-031: hardened helmet configuration. This service is a JSON API (plus
+// file downloads), so a restrictive default-src 'none' CSP blocks any HTML/XSS
+// execution surface, HSTS is pinned with preload + includeSubDomains, and
+// frame-ancestors DENY prevents the responses being framed for clickjacking.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        // Allow browsers to render PDFs / images served inline from downloads.
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    referrerPolicy: { policy: 'no-referrer' },
+    frameguard: { action: 'deny' },
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    },
+  })
+);
 
 app.use(
   cors({
@@ -233,6 +259,8 @@ app.use('/api/feedback', feedbackRoutes);
 
 app.use('/api/articles', articleRoutes);
 
+app.use('/api/notices', noticeRoutes);
+
 // ─────────────────────────────────────────────
 // Root Route
 // ─────────────────────────────────────────────
@@ -274,42 +302,65 @@ const startServer = async () => {
     // Seed default admin
     await seedAdmin();
 
+    // SA-037: surface (non-fatally) a cookie-signing secret misconfiguration.
+    const cookieSecretCheck = evaluateCookieSecret({
+      cookieSecret: process.env.COOKIE_SECRET,
+      jwtSecret: process.env.JWT_SECRET,
+      jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+    });
+    if (cookieSecretCheck.reused) {
+      console.warn(`[Config] ${cookieSecretCheck.advice}`);
+    } else if (cookieSecretCheck.missing && process.env.NODE_ENV === 'production') {
+      console.warn(`[Config] ${cookieSecretCheck.advice}`);
+    }
+
     // ─────────────────────────────────────────
     // Migration: Fix existing internships
     // ─────────────────────────────────────────
 
-    // Uses raw MongoDB driver to bypass Mongoose validation
+    // SA-036: data repair must NOT happen implicitly on every boot. A startup
+    // path that issues updateMany({}) writes to the database on each cold start
+    // (and would fight a rollback if the shape regressed). It is now opt-in via
+    // RUN_BOOT_MIGRATIONS=true for legacy one-off repairs; the preferred, safe
+    // route is the explicit `scripts/repairInternshipFlags.mjs` (dry-run by
+    // default). Without the flag the app boots read-only and touches no data.
     const collection = Internship.collection;
 
-    const allDocs = await collection.find({}).toArray();
+    if (process.env.RUN_BOOT_MIGRATIONS === 'true') {
+      const allDocs = await collection.find({}).toArray();
 
-    if (allDocs.length > 0) {
-      // Fix isDeleted on all internships
-      await collection.updateMany(
-        {},
-        {
-          $set: {
-            isDeleted: false,
-          },
-        }
-      );
+      if (allDocs.length > 0) {
+        // Fix isDeleted on all internships
+        await collection.updateMany(
+          {},
+          {
+            $set: {
+              isDeleted: false,
+            },
+          }
+        );
 
-      // Fix any non-standard status, including "draft"
-      await collection.updateMany(
-        {
-          status: {
-            $nin: ['published', 'closed', 'archived'],
+        // Fix any non-standard status, including "draft"
+        await collection.updateMany(
+          {
+            status: {
+              $nin: ['published', 'closed', 'archived'],
+            },
           },
-        },
-        {
-          $set: {
-            status: 'published',
-          },
-        }
-      );
+          {
+            $set: {
+              status: 'published',
+            },
+          }
+        );
 
+        console.log(
+          `🔧 Migration: fixed ${allDocs.length} internship(s)`
+        );
+      }
+    } else {
       console.log(
-        `🔧 Migration: fixed ${allDocs.length} internship(s)`
+        '🔧 Boot-time migration skipped (RUN_BOOT_MIGRATIONS not set). Use scripts/repairInternshipFlags.mjs for a reviewed, explicit repair.'
       );
     }
 

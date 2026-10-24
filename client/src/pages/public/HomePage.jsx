@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { FiArrowRight, FiCheckCircle, FiUsers, FiAward, FiBriefcase, FiZap, FiShield, FiGlobe, FiSearch, FiCamera, FiBookOpen } from 'react-icons/fi';
 import { FaLinkedin, FaYoutube, FaFacebook, FaInstagram, FaGithub, FaWhatsapp } from 'react-icons/fa';
 import useSiteSettings from '../../hooks/useSiteSettings';
+import NoticeSection from '../../components/NoticeSection';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 30 },
@@ -85,6 +86,9 @@ const HomePage = () => {
           </div>
         </div>
       </section>
+
+      {/* Latest Notices & Announcements */}
+      <NoticeSection page="home" limit={6} />
 
       {/* Features Section */}
       <section className="py-20 bg-white dark:bg-dark-800">

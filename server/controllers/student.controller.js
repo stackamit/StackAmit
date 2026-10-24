@@ -3,6 +3,28 @@ import User from '../models/User.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinary.service.js';
 import { logActivity } from '../services/activityLog.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { literalSearchRegex } from '../utils/authz.js';
+
+// SA-024: fields an admin may set through the generic update endpoint.
+// Everything else on the document (role, password, isActive, isVerified,
+// deletedAt/isDeleted, refreshToken, derived profileCompletion, __v) is
+// deliberately ignored so a crafted/CSRF'd payload cannot change privileges.
+// Kept as a pure, exported helper so it can be unit-verified without a DB.
+export const ADMIN_EDITABLE_STUDENT_FIELDS = [
+  'firstName', 'lastName', 'name', 'email', 'phone', 'gender', 'dob',
+  'collegeName', 'university', 'course', 'branch', 'year',
+  'address', 'city', 'state', 'country', 'pinCode',
+  'linkedIn', 'gitHub', 'skills', 'assignedTrainer', 'currentInternship',
+];
+
+export const pickAdminStudentFields = (body) => {
+  const src = body && typeof body === 'object' ? body : {};
+  const out = {};
+  for (const key of ADMIN_EDITABLE_STUDENT_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
+  }
+  return out;
+};
 
 // ─── Get All Students (Admin/Trainer) ────────────────────────────────────────
 export const getAllStudents = asyncHandler(async (req, res) => {
@@ -13,16 +35,19 @@ export const getAllStudents = asyncHandler(async (req, res) => {
   // Trainer can only see students assigned to them
   if (req.user.role === 'trainer') {
     query.assignedTrainer = req.user._id;
-    console.log('[Students] Trainer filter - trainerId:', req.user._id);
   }
 
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } },
-      { firstName: { $regex: search, $options: 'i' } },
-      { lastName: { $regex: search, $options: 'i' } },
-    ];
+    // SA-014: escape the term so it is matched literally (no operator/ReDoS).
+    const rx = literalSearchRegex(String(search));
+    if (rx) {
+      query.$or = [
+        { name: rx },
+        { email: rx },
+        { firstName: rx },
+        { lastName: rx },
+      ];
+    }
   }
   if (college) query.collegeName = college;
   if (status === 'active') query.isActive = true;
@@ -41,7 +66,7 @@ export const getAllStudents = asyncHandler(async (req, res) => {
     Student.countDocuments(query),
   ]);
 
-  console.log('[Students] Found', students.length, 'of', total, 'total for role:', req.user.role);
+  // SA-023: do not log record counts keyed by user role/id (PII-free logging).
   res.status(200).json({
     success: true,
     data: { students, total, pages: Math.ceil(total / limit), page: parseInt(page) },
@@ -50,6 +75,10 @@ export const getAllStudents = asyncHandler(async (req, res) => {
 
 // ─── Get Student by ID ───────────────────────────────────────────────────────
 export const getStudentById = asyncHandler(async (req, res) => {
+  // Students may only view their own profile; admin/trainer unrestricted
+  if (req.user.role === 'student' && String(req.user._id) !== String(req.params.id)) {
+    return res.status(403).json({ success: false, message: 'Not authorized to access this resource' });
+  }
   const student = await Student.findById(req.params.id);
   if (!student) {
     return res.status(404).json({ success: false, message: 'Student not found' });
@@ -68,8 +97,40 @@ export const updateStudentProfile = asyncHandler(async (req, res) => {
 
   const updates = {};
   allowedFields.forEach((field) => {
-    if (req.body[field] !== undefined) updates[field] = req.body[field];
+    if (req.body[field] === undefined) return;
+
+    let value = req.body[field];
+
+    // Normalize empty input: blank strings (and blank date/enum values) are
+    // treated as "not provided" so they never trigger CastError / enum errors.
+    if (typeof value === 'string') value = value.trim();
+    if (value === '' || value === null) return;
+    if (field === 'dob' && value === 'Invalid Date') return;
+
+    updates[field] = value;
   });
+
+  // Required fields cannot be blanked out via profile update
+  const requiredLabels = {
+    firstName: 'First name',
+    lastName: 'Last name',
+    gender: 'Gender',
+    dob: 'Date of birth',
+    collegeName: 'College name',
+    university: 'University',
+    course: 'Course',
+    branch: 'Branch',
+    year: 'Year',
+  };
+  const blankRequired = allowedFields
+    .filter((f) => requiredLabels[f] && (req.body[f] === undefined || String(req.body[f]).trim() === ''))
+    .map((f) => requiredLabels[f]);
+  if (blankRequired.length) {
+    return res.status(400).json({
+      success: false,
+      message: `Please fill in: ${blankRequired.join(', ')}`,
+    });
+  }
 
   const student = await Student.findById(req.user._id);
   if (!student) {
@@ -77,6 +138,15 @@ export const updateStudentProfile = asyncHandler(async (req, res) => {
   }
 
   Object.assign(student, updates);
+
+  // Keep the base user `name` in sync with first/last name changes
+  const nextFirst = updates.firstName ?? student.firstName;
+  const nextLast = updates.lastName ?? student.lastName;
+  if (nextFirst || nextLast) {
+    const derivedName = `${nextFirst || ''} ${nextLast || ''}`.trim();
+    if (derivedName.length >= 2) student.name = derivedName;
+  }
+
   student.calculateProfileCompletion();
   await student.save();
 
@@ -99,7 +169,8 @@ export const adminUpdateStudent = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Student not found' });
   }
 
-  const updates = req.body;
+  // SA-024: only allow-listed fields are assigned onto the document.
+  const updates = pickAdminStudentFields(req.body);
   Object.assign(student, updates);
   student.calculateProfileCompletion();
   await student.save();
@@ -224,11 +295,17 @@ export const resetStudentPassword = asyncHandler(async (req, res) => {
 
   student.password = tempPassword;
   student.mustChangePassword = true;
+  // SA-005/SA-028: invalidate the existing refresh session on admin reset.
+  student.refreshToken = null;
+  student.refreshTokenHash = null;
   await student.save();
 
+  // SA-028: the one-time password is returned exactly once and must not be
+  // cached by browsers/proxies (it lands in history otherwise).
+  res.set('Cache-Control', 'no-store');
   res.status(200).json({
     success: true,
-    message: 'Password reset successfully',
+    message: 'Password reset successfully. Share this temporary password with the student securely; it will not be shown again.',
     data: { tempPassword },
   });
 });

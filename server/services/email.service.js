@@ -1,4 +1,6 @@
 import sgMail from "@sendgrid/mail";
+import { redactEmail, redactText, scrub } from "../utils/logRedact.js";
+import { getClientBaseUrl } from "../utils/appUrl.js";
 
 const isSendGridConfigured = () => {
   const key = process.env.SENDGRID_API_KEY;
@@ -13,8 +15,9 @@ if (isSendGridConfigured()) {
 
 const sendEmail = async (msg) => {
   if (!isSendGridConfigured()) {
+    // SA-023: never log the recipient address or the real subject.
     console.warn(
-      `Email not sent (SendGrid not configured). Would have sent to: ${msg.to}, subject: ${msg.subject}`,
+      `Email not sent (SendGrid not configured). to=${redactEmail(msg.to)} subject=${redactText(msg.subject)}`,
     );
     return { success: false, error: "Email service not configured" };
   }
@@ -22,7 +25,8 @@ const sendEmail = async (msg) => {
     await sgMail.send(msg);
     return { success: true };
   } catch (error) {
-    console.error("SendGrid Error:", error.response?.body || error.message);
+    // SA-023: provider bodies can echo recipient/headers - scrub before logging.
+    console.error("SendGrid Error:", scrub(error.response?.body || error.message));
     return { success: false, error: error.message };
   }
 };
@@ -71,7 +75,7 @@ export const sendWelcomeStudentEmail = async (to, name, tempPassword) => {
             <h2>Hello ${name},</h2>
             <p>Welcome to the StackAmit Internship Management System! Your email has been verified and your account is now active.</p>
             ${credentialsSection}
-            <a href="${process.env.CLIENT_URL}/login" class="btn">Login to Your Account</a>
+            <a href="${getClientBaseUrl()}/login" class="btn">Login to Your Account</a>
           </div>
           <div class="footer">
             <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
@@ -120,7 +124,7 @@ export const sendWelcomeTrainerEmail = async (to, name, tempPassword) => {
               <p><strong>Temporary Password:</strong> ${tempPassword}</p>
             </div>
             <p>Please log in and change your password immediately.</p>
-            <a href="${process.env.CLIENT_URL}/login" class="btn">Login to Your Account</a>
+            <a href="${getClientBaseUrl()}/login" class="btn">Login to Your Account</a>
           </div>
           <div class="footer">
             <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
@@ -211,8 +215,11 @@ export const sendPasswordResetEmail = async (to, name, resetUrl) => {
   return sendEmail(msg);
 };
 
-// Sent AFTER a password has been reset, delivering the login email + the new password.
-export const sendPasswordResetSuccessEmail = async (to, name, email, newPassword) => {
+// Sent AFTER a password has been reset. NOTE (SA-005): this NEVER contains the
+// password. The user chose their own new password in the reset form, so there
+// is no reason to email it back. Sending credentials in clear text over email
+// was the vulnerability; only a security notice is delivered now.
+export const sendPasswordResetSuccessEmail = async (to, name, email) => {
   const msg = {
     to,
     from: process.env.EMAIL_FROM,
@@ -229,10 +236,6 @@ export const sendPasswordResetSuccessEmail = async (to, name, email, newPassword
         .body { padding: 30px; }
         .body h2 { color: #1a1a2e; margin-top: 0; }
         .body p { color: #555; line-height: 1.7; font-size: 14px; }
-        .credentials { background: #f8f9ff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; }
-        .credentials p { margin: 8px 0; font-size: 14px; }
-        .credentials strong { color: #333; }
-        .credentials .value { color: #11998e; font-weight: 700; word-break: break-all; }
         .btn { display: inline-block; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; }
         .security { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; margin: 18px 0; }
         .security p { margin: 0; color: #92400e; font-size: 13px; }
@@ -247,14 +250,10 @@ export const sendPasswordResetSuccessEmail = async (to, name, email, newPassword
           </div>
           <div class="body">
             <h2>Hello ${name || "there"},</h2>
-            <p>Your password has been reset successfully. You can now log in using the credentials below:</p>
-            <div class="credentials">
-              <p><strong>Email:</strong> <span class="value">${email}</span></p>
-              <p><strong>New Password:</strong> <span class="value">${newPassword}</span></p>
-            </div>
-            <a href="${process.env.CLIENT_URL}/login" class="btn">Login Now</a>
+            <p>The password for your account (${email}) has been reset successfully. For security we never send passwords by email.</p>
+            <a href="${getClientBaseUrl()}/login" class="btn">Login Now</a>
             <div class="security">
-              <p>For your security, please keep this password safe and consider changing it after logging in. If you did not request this reset, contact StackAmit support immediately.</p>
+              <p>If you did not request this reset, contact StackAmit support immediately — your previous sessions have been signed out.</p>
             </div>
           </div>
           <div class="footer">
@@ -289,7 +288,7 @@ export const sendTaskAssignedEmail = async (
           <p><strong>Due Date:</strong> ${new Date(dueDate).toLocaleDateString()}</p>
         </div>
         <p>Please log in to view the full details and submit your work.</p>
-        <a href="${process.env.CLIENT_URL}/student/tasks" style="display: inline-block; background: #667eea; color: #fff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">View Task</a>
+        <a href="${getClientBaseUrl()}/student/tasks" style="display: inline-block; background: #667eea; color: #fff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">View Task</a>
       </div>
     `,
   };
@@ -310,7 +309,7 @@ export const sendCertificateEmail = async (
     month: "long",
     year: "numeric",
   });
-  const certificatesUrl = `${process.env.CLIENT_URL}/student/certificates`;
+  const certificatesUrl = `${getClientBaseUrl()}/student/certificates`;
 
   const msg = {
     to,
@@ -419,7 +418,7 @@ export const sendOfferLetterEmail = async (
     month: "long",
     year: "numeric",
   });
-  const offerLettersUrl = `${process.env.CLIENT_URL}/student/offer-letters`;
+  const offerLettersUrl = `${getClientBaseUrl()}/student/offer-letters`;
 
   const msg = {
     to,

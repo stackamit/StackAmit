@@ -1,6 +1,6 @@
 import axios from 'axios';
 import {
-  getCacheTtl, readCacheEntry, writeCacheEntry, invalidateResource,
+  getCacheTtl, readCacheEntry, writeCacheEntry, invalidateResource, clearApiCache,
 } from './apiCache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -99,10 +99,18 @@ api.interceptors.response.use(
 
     // Prevent infinite retry loop
     if (originalRequest._retry) {
+      // SA-020: forced logout - drop cached per-user PII payloads.
+      // Run before removing 'user' so clearApiCache() resolves the real owner
+      // bucket (it reads localStorage.user); otherwise it clears the wrong one.
+      clearApiCache();
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
 
-      window.location.href = '/login';
+      // SA-020 regression guard: the passive session-restore probe must never
+      // hard-redirect an anonymous visitor away from a public page.
+      if (!originalRequest._noRedirect) {
+        window.location.href = '/login';
+      }
 
       return Promise.reject(error);
     }
@@ -179,12 +187,18 @@ api.interceptors.response.use(
       // Reject all queued requests
       processQueue(refreshError, null);
 
+      // SA-020: session is gone - drop cached per-user PII payloads.
+      // Run before removing 'user' so clearApiCache() resolves the real owner.
+      clearApiCache();
+
       // Remove invalid authentication data
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
 
-      // Redirect only if not already on login
-      if (window.location.pathname !== '/login') {
+      // Redirect only if not already on login. SA-020 regression guard: skip the
+      // hard redirect for the passive session-restore probe so public pages are
+      // never bounced to /login when there is simply no session to restore.
+      if (!originalRequest._noRedirect && window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
 

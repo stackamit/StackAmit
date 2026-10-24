@@ -19,7 +19,7 @@ router.post('/resume', upload.single('resume'), uploadResume);
 // Admin routes
 router.get('/stats', authorize('admin'), getStudentsStats);
 router.get('/', authorize('admin', 'trainer'), getAllStudents);
-router.get('/:id', authorize('admin', 'trainer'), getStudentById);
+router.get('/:id', authorize('admin', 'trainer', 'student'), getStudentById);
 router.put('/:id', authorize('admin'), adminUpdateStudent);
 router.patch('/:id/status', authorize('admin'), toggleStudentStatus);
 router.delete('/:id', authorize('admin'), deleteStudent);

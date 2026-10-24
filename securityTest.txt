@@ -1,0 +1,958 @@
+================================================================================
+StackAmit Company — Authorized Security Audit & Penetration Test Report
+Engagement type: STATIC / READ-ONLY code review (no source files modified)
+Report generated: 2026-10-24
+Auditor role: Independent senior application security engineer
+================================================================================
+
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+The StackAmit application has a sound overall architecture (httpOnly refresh
+cookie, bcrypt password hashing, JWT access/refresh separation, role middleware,
+React output escaping, soft deletes) but has several authorization and
+data-exposure defects that are exploitable by low-privileged or anonymous
+users. The most important issues:
+
+  * Anonymous callers can recover a verified student's FULL personal profile
+    (name, email, phone, DOB, college, skills, resume URL) from the public
+    certificate-verification endpoint using a guessable certificate number.
+  * The public certificate-verification endpoint accepts a completely empty
+    query and returns an arbitrary certificate record.
+  * Certificate numbers are sequential (MTC-<year>-<counter>) and generated with
+    a count-then-insert race condition, making enumeration practical.
+  * Several protected list/detail endpoints are missing role checks or object
+    level checks (settings by key, tasks by id, pinned messages, internship
+    applications, internships list, certificates list/detail).
+  * The authenticated internship list endpoint performs WRITE operations
+    (mass updateMany) inside a GET request.
+  * The password-reset flow emails the user's NEW PASSWORD in plaintext.
+  * No rate limiting on OTP verification; OTPs are generated with Math.random().
+  * 9 server-side (1 critical, 5 high) and 2 client-side (high) vulnerable npm
+    dependencies are installed.
+
+No confirmed remote code execution, SQL/NoSQL authentication bypass, or stored
+XSS was found. Frontend rendering is React-escaped with no
+dangerouslySetInnerHTML usage.
+
+FINDINGS SUMMARY TABLE
+--------------------------------------------------------------------------------
+ID       Vulnerability                                       Severity  Conf.  Component                     Status
+SA-001   PII exposure via public certificate verify          High      High   certificate.controller.js      Confirmed (static)
+SA-002   Empty-query verification returns a certificate      High      High   certificate.controller.js      Confirmed (static)
+SA-003   GET request mutates database (internships)          High      High   internship.controller.js       Confirmed (static)
+SA-004   Internships list missing role authorization         High      High   internship.routes.js           Confirmed (static)
+SA-005   Plaintext new password emailed on reset             High      High   auth.controller.js             Confirmed (static)
+SA-006   Vulnerable npm dependencies (incl. critical)        High      High   server/client package.json     Confirmed (npm audit)
+SA-007   IDOR: task detail + submission disclosure           Medium    High   task.controller.js             Confirmed (static)
+SA-008   Settings readable by any authenticated user         Medium    High   settings.controller.js         Confirmed (static)
+SA-009   Trainer can open/read chat with any student         Medium    High   discussion.controller.js       Confirmed (static)
+SA-010   IDOR: certificate detail/list/QR across students    Medium    High   certificate.routes.js          Confirmed (static)
+SA-011   Pinned messages readable without membership         Medium    Med    discussion.controller.js       Probable
+SA-012   Trainer can review any submission (no ownership)    Medium    Med    task.controller.js             Confirmed (static)
+SA-013   Trainer reads applications for any internship       Medium    Med    application.controller.js      Confirmed (static)
+SA-014   Unescaped user input in MongoDB $regex              Medium    Med    4 controllers                  Confirmed (pattern)
+SA-015   Upload validation ineffective (folder + MIME)       Medium    Med    upload.*.js, cloudinary svc    Confirmed (static)
+SA-016   Weak JWT/cookie secret entropy, no algo pinning     Medium    Med    auth.service.js, .env          Confirmed (static)
+SA-017   OTP: non-crypto RNG + no attempt throttling         Medium    High   OTP.js, auth.controller.js     Confirmed (static)
+SA-018   Auth rate limiting far too permissive               Medium    High   server.js                    Confirmed (static)
+SA-019   Account/user enumeration                             Medium    High   auth.controller.js, routes     Confirmed (static)
+SA-020   Access token in localStorage + response body        Medium    High   AuthContext.jsx, api.js        Confirmed (static)
+SA-021   Refresh token stored plaintext in user doc           Low      High   auth.controller.js, User.js    Confirmed (static)
+SA-022   requirePasswordChange middleware never enforced      Low      High   middleware/auth.js             Confirmed (unused)
+SA-023   PII + error details written to logs                  Low       High   controllers, email.service     Confirmed (static)
+SA-024   Mass assignment in admin student update              Low       Med    student.controller.js          Confirmed (admin-only)
+SA-025   Student can submit any assigned trainer's task       Low       High   task.controller.js             Confirmed (static)
+SA-026   Online-user ID list exposed to any user              Low       High   discussion.controller.js       Confirmed (static)
+SA-027   Predictable certificate numbers + generation race     Low      High   models/Certificate.js          Confirmed (static)
+SA-028   Temp password returned in HTTP response               Low       High   student/trainer controller     Confirmed (static)
+SA-029   Inconsistent role shape (array vs string) in CORS     Info      High   server.js, socket/index.js     Confirmed (static)
+SA-030   Socket.io CORS origin cannot be a list                Info      High   socket/index.js               Confirmed (static)
+SA-031   No CSP / clickjacking / HSTS hardening                Info      High   server.js, netlify.toml        Confirmed (static)
+SA-032   Public feedback endpoint unvalidated + floods admins Info      High   feedback.controller.js         Confirmed (static)
+SA-033   Raw err.message returned to clients                   Info      High   internship/feedback controller Confirmed (static)
+SA-034   Weak password policy model vs validator mismatch      Info      High   models/User.js, validator      Confirmed (static)
+SA-035   CLIENT_URL used as a single origin for emails/links   Info      Med    certificate/application svc    Observation
+
+2. SCOPE AND ENVIRONMENT
+--------------------------------------------------------------------------------
+Repository audited: e:\StackAmit-clean (local working copy, Git repository
+present; git CLI not available in the sandbox shell, so Git history was
+inspected only via .git/index — no commits were created or modified).
+
+Deployment targets referenced in the code:
+  * Frontend: https://stackamit.netlify.app (netlify.toml, client/.env)
+  * API:      https://stackamit.onrender.com (client/.env)
+  * Local:    http://localhost:5000 (server) / http://localhost:5173 (Vite)
+
+Testing limitation (explicit): No runtime/dynamic testing was performed. The
+production URLs found in the repository were NOT treated as authorized test
+targets, because the engagement brief states that a URL must not be assumed
+authorized merely because it appears in the repository, and no test
+credentials/environment were supplied. The audit is therefore a static review
+plus dependency verification via the existing local lockfiles (`npm audit`,
+read-only, no installs). Findings marked "Confirmed (static)" are proven by
+source-level data flow; items needing live confirmation are listed in section
+16 and remain unverified.
+
+3. TESTING METHODOLOGY
+--------------------------------------------------------------------------------
+  1. Asset/stack discovery from configs, entry point, models, routes.
+  2. Attack-surface mapping: every Express route file, socket handlers, public
+     vs protected vs admin-scoped routes.
+  3. Threat modeling: anonymous, student, trainer, malicious authenticated
+     user, admin-API abuser, frontend-bypass attacker.
+  4. Static review of authentication, session, authorization, object-level
+     access control, input validation, injection sinks, uploads, storage,
+     crypto, error handling, logging, headers, CORS, frontend token handling.
+  5. Secret hygiene check on .env files and Git index (values not reproduced).
+  6. Dependency audit using existing node_modules/lockfiles only.
+  7. Severity assignment based on realistic exploitability + impact (no scanner
+     labels used blindly).
+
+No files in the audited application were created, edited, moved or deleted by
+this test. The only file created during the engagement is this report,
+securityTest.txt, at the explicit instruction of the engagement owner.
+
+4. TECHNOLOGY STACK IDENTIFIED
+--------------------------------------------------------------------------------
+  Frontend  React 18 + Vite 6, React Router 7, Redux Toolkit, TanStack Query,
+            Axios, Framer Motion, Socket.io-client, Tailwind CSS,
+            react-hook-form, html5-qrcode
+  Backend   Node.js ESM, Express 4, Socket.io 4, Mongoose 8 (MongoDB Atlas),
+            bcryptjs, jsonwebtoken 9, express-validator, helmet, cors, morgan,
+            express-rate-limit, multer (memory storage), Cloudinary SDK,
+            SendGrid SDK, pdfkit, qrcode, uuid, exceljs
+  Data      MongoDB (Mongoose models with role discriminator:
+            User -> Admin / Trainer / Student)
+  Storage   Cloudinary (avatars, resumes, media library, PDFs)
+  Auth      JWT access token (15 min default) + JWT refresh token (7 d),
+            refresh token also persisted per user; httpOnly cookie delivery
+            plus Bearer header from localStorage; email OTP verification
+  Deploy    Netlify (static SPA) + Render (API behind load balancer,
+            `trust proxy` = 1)
+
+5. ATTACK SURFACE INVENTORY
+--------------------------------------------------------------------------------
+Anonymous entry points
+  GET  /api/health, /
+  POST /api/auth/register, /verify-email, /resend-otp, /login,
+       /refresh-token, /forgot-password, /reset-password
+  GET  /api/internships/public, /public/:id
+  GET  /api/notices/public, /public/:id
+  GET  /api/articles, /api/articles/:id
+  GET  /api/settings/public
+  GET  /api/certificates/verify, /api/certificates/:id/public
+  POST /api/feedback/public
+
+Authenticated (protect) entry points
+  Auth:   POST /logout, /change-password, /avatar; GET /me; PUT /profile
+  Students: PUT /profile, POST /avatar, POST /resume, GET /, /:id, /stats,
+            PUT /:id, PATCH /:id/status, DELETE /:id, POST /:id/reset-password
+  Trainers: PUT /profile, POST /, GET /, /:id, /stats, PUT /:id,
+            POST /:id/assign-students, DELETE /:id/students/:sid,
+            PATCH /:id/status, DELETE /:id, POST /:id/reset-password
+  Internships: GET /, /:id, /stats; POST /; PUT /:id; PATCH /:id/publish|close;
+               DELETE /:id
+  Applications: POST /apply; GET /my, /offer-letters, /offer-letters/all,
+                /offer-letters/:id/download, /all, /internship/:id;
+                PATCH /:id/approve|reject|complete|withdraw
+                POST /offer-letters/:id/resend-email
+  Tasks:  GET /, /stats, /:id; POST /; PUT /:id; DELETE /:id;
+          POST /:taskId/submit; PATCH /submissions/:id/review
+  Certificates: GET /, /:id, /:id/download, /:id/qr, /stats; POST /generate,
+                /:id/resend-email; PATCH /:id/revoke
+  Settings: GET /, /:key; PUT /, /bulk; DELETE /:key
+  Reports: GET /admin/dashboard, /trainer/dashboard, /student/dashboard,
+           /monthly, /export
+  Uploads: POST /image, /document, /multiple; GET /media
+  Discussions: conversations, messages (GET/POST), pinned, close, mute,
+               delete message, online-users
+  Notifications: GET /, /unread-count; PATCH /:id/read, /read/all
+  Articles (write): POST /; PUT /:id; PATCH /:id/status; DELETE /:id
+  Feedback (admin): GET /, /stats, /:id; POST /:id/reply;
+                    PATCH /:id/status; DELETE /:id
+
+Socket.io events (JWT handshake auth)
+  joinConversation, leaveConversation, sendMessage, typing, stopTyping,
+  messageEdited, messageDeleted, togglePin, toggleImportant
+
+Sensitive capabilities
+  File upload (Cloudinary), PDF generation/download, credential issuance
+  (certificates, offer letters), admin configuration writes, bulk data export,
+  private messaging, password reset, role assignment.
+
+6. CRITICAL FINDINGS
+--------------------------------------------------------------------------------
+No finding met the "Critical" definition (practical exploit leading to broad
+unauthorized administrative control or extensive highly-sensitive data
+exposure) with the evidence obtainable under read-only/static constraints.
+
+Note on potential escalation: SA-003 combined with SA-004 (any authenticated
+user reaching the internship list route that performs unconditional
+`updateMany` writes) is a state-changing read endpoint; if it were exercised
+against production data it could silently re-publish archived internships.
+It is rated High rather than Critical because it does not grant
+administrative control and does not expose credentials.
+
+7. HIGH-SEVERITY FINDINGS
+--------------------------------------------------------------------------------
+
+SA-001 — Personal data disclosure through public certificate verification
+  Severity: High   Confidence: High   Verification: Confirmed (static)
+  Category: Broken object-level authorization / excessive data exposure
+  Location: server/controllers/certificate.controller.js:126-152
+            server/services/certificate.service.js:20-23
+  Route:    GET /api/certificates/verify?certificateNumber=...
+  Explanation: verifyCertificate has no authentication. It queries by
+    certificateNumber or verificationId and returns the certificate populated
+    with studentId fields `name email` (plus internship title/category).
+    `getCertificatePopulated` is the helper used here, which itself selects
+    name, email, collegeName, university, course, branch, year; the
+    certificate document also embeds studentName and the full record
+    (issuedBy, createdAt, etc.).
+  Evidence: Line 133-135 explicitly populates studentId with `name email` and
+    line 148-151 returns `{ certificate, isValid: true }` unredacted. Compare
+    getCertificateByIdPublic (line 236-247), which deliberately builds a
+    display-safe object — the public verify path does not.
+  Safe reproduction (static): request /api/certificates/verify with a
+    certificateNumber value; response body contains a student email.
+  Preconditions: knowledge/guess of one certificate number (see SA-027).
+  Impact: untargeted leakage of verified students' identity and educational
+    institution; enables phishing and credential-stuffing targeting.
+  Remediation: return an explicit allow-list of display fields (studentName,
+    internshipTitle, type, issuedDate, status) and never populate student
+    email/college from the unauthenticated path.
+
+SA-002 — Empty query on public verification returns an arbitrary record
+  Severity: High   Confidence: High   Verification: Confirmed (static)
+  Category: Improper input validation / insecure query construction
+  Location: server/controllers/certificate.controller.js:127-135
+  Route:    GET /api/certificates/verify  (no parameters)
+  Explanation: `query` starts as `{}` and is only populated when a parameter
+    is present. `Certificate.findOne({})` matches an arbitrary certificate,
+    and with no field filter the full document (including verificationId,
+    issuedBy, revoked state) plus student email is returned.
+  Evidence: no guard exists for the "neither parameter supplied" case.
+  Safe reproduction: GET /api/certificates/verify with no query string.
+  Impact: bypasses the intended "know the number" prerequisite for SA-001;
+    mass exposure of verificationId values.
+  Remediation: reject the request unless a certificateNumber or verificationId
+    is supplied and non-empty; apply the field allow-list from SA-001.
+
+SA-003 — GET /api/internships performs database writes (hidden migration)
+  Severity: High   Confidence: High   Verification: Confirmed (static)
+  Category: Unsafe state change on read operation / data integrity
+  Location: server/controllers/internship.controller.js:111-189 (lines
+            153-174 specifically)
+  Route:    GET /api/internships (protect only; see SA-004)
+  Explanation: when the primary query returns no rows and no `search` was
+    provided, the handler runs an unconditional
+    `Internship.collection.updateMany({}, {$set:{isDeleted:false}})` and
+    rewrites every non-standard status to 'published'. This is a data
+    migration executed inside a read request path, bypassing Mongoose
+    validation.
+  Evidence: lines 167-173; also duplicated at server startup in
+    server.js:285-317.
+  Safe reproduction (static): any authenticated user triggering the fallback
+    branch (e.g. a filter that yields zero results) causes the write.
+  Impact: archived/deleted internships can be silently re-exposed; closed
+    records can be flipped to 'published'; students could then apply to
+    positions that were intended to be hidden. Integrity/availability risk
+    without any authorization.
+  Remediation: remove all write logic from request handlers; run one-off
+    migrations as explicit, controlled scripts; return 500 instead of
+    swallowing query errors and falling back.
+
+SA-004 — Internship routes missing authorization on list/detail/stats-adjacent
+  Severity: High   Confidence: High   Verification: Confirmed (static)
+  Category: Missing function-level authorization
+  Location: server/routes/internship.routes.js:20-21
+  Explanation: `GET /` and `GET /:id` are behind `protect` only, with no
+    `authorize(...)`. Students and trainers reach the administrative listing
+    path (createdBy email, assignedTrainer email, all statuses via the `status`
+    query parameter, deleted-but-present records), and `getInternshipById`
+    (controller line 192-202) only excludes `isDeleted`, not `status`.
+  Evidence: contrast with lines 18-19 and 22-25, which do use `authorize`.
+  Impact: cross-role disclosure of internal records; combined with SA-003 it
+    is a read endpoint with side effects reachable by any student account.
+  Remediation: add `authorize('admin','trainer')` to the management listing and
+    force role-scoped filters server-side; give students the existing
+    `/public` endpoints only.
+
+SA-005 — Password reset emails the user's new password in plaintext
+  Severity: High   Confidence: High   Verification: Confirmed (static)
+  Category: Insecure credential handling / sensitive data in transit at rest
+  Location: server/controllers/auth.controller.js:345-357;
+            server/services/email.service.js (sendPasswordResetSuccessEmail)
+  Explanation: after a successful OTP reset the server sends an email
+    containing the new password and states so in the API response. Plaintext
+    credentials persist in mailboxes and mail-provider logs indefinitely.
+  Evidence: line 348 passes `newPassword` into the email template; line 361
+    confirms it to the caller.
+  Impact: credential exposure; loss of the "only the user knows their
+    password" property; combined with mail-account compromise enables
+    silent account takeover persistence.
+  Remediation: never email passwords. Send a "password changed" notification
+    only (no secrets), and invalidate all sessions/refresh tokens on reset.
+
+SA-006 — Vulnerable installed dependencies
+  Severity: High   Confidence: High   Verification: Confirmed via local
+                                       `npm audit --omit=dev` (read-only)
+  Installed versions confirmed from node_modules (server): express 4.22.2,
+  proxy-addr 2.0.7, body-parser 1.20.6; (client): axios 1.19.0.
+  Server (9: 1 critical, 5 high, 3 moderate):
+    proxy-addr 2.0.7                  CRITICAL  IPv4-mapped IPv6 trust-subnet
+                                            spoofing (GHSA-jqcg-44mw-7w3h) —
+                                            directly relevant because the API
+                                            sets `trust proxy` and rate-limits
+                                            by client IP.
+    express 4.22.2 (via qs)            moderate  qs array-limit bypass / DoS
+    body-parser 1.20.6                 high      DoS via trailing bytes (GHSA-…)
+    brace-expansion               high      CPU DoS (readdir-glob path)
+    engine.io 6.6.x               high      Socket.IO Engine.IO revision DoS
+    follow-redirects 1.16.0       high      credential-header exposure
+    morgan <=1.12.0               moderate  log forging via unescaped quotes /
+                                            Unicode separators — relevant
+                                            because request data is logged.
+  Client (2 high):
+    axios 1.19.0                       high      multiple (prototype-pollution
+                                            gadgets, header injection, SSRF
+                                            redirect bypass, ReDoS)
+    follow-redirects 1.16.0       high      as above
+  Remediation: apply non-breaking updates (`npm audit fix`), prioritising
+    proxy-addr/express (rate-limit integrity) and axios. Re-run audit in CI.
+  Note: no packages were installed or updated during this engagement.
+
+8. MEDIUM-SEVERITY FINDINGS
+--------------------------------------------------------------------------------
+
+SA-007 — IDOR: any authenticated user can read any task and its submission
+  Location: server/routes/task.routes.js:14; server/controllers/task.controller.js:103-117
+  Category: Missing object-level authorization (BOLA)
+  Explanation: getTaskById applies no ownership check. It returns the task with
+    assignedTo populated (`name email avatar firstName lastName collegeName`)
+    and returns the submission with its student populated (`name email
+    firstName lastName`) regardless of who requests it.
+  Preconditions: any student account + a task id (ObjectId, also returned by
+    other endpoints).
+  Impact: cross-student profile disclosure, exposure of other students' work
+    submissions and marks; trainer email disclosure.
+  Remediation: mirror the scoping used in getTasks — allow students only their
+    own assigned tasks and trainers only `assignedBy` tasks.
+
+SA-008 — Settings readable by any authenticated user (including non-public)
+  Location: server/routes/settings.routes.js:16-17; server/controllers/settings.controller.js:35-41
+  Category: Missing authorization / excessive data exposure
+  Explanation: getSettings correctly restricts non-admins to `isPublic: true`,
+    but getSettingByKey performs `Setting.findOne({ key })` with no role or
+    visibility filter.
+  Impact: students/trainers can read internal configuration values by guessing
+    keys; can reveal business settings intended for admins only.
+  Remediation: enforce the same role/isPublic filter in getSettingByKey, or
+    require `authorize('admin')`.
+
+SA-009 — Trainer can open and read a conversation with any student
+  Location: server/controllers/discussion.controller.js:131-182; routes/discussion.routes.js:26
+  Category: Missing object-level authorization
+  Explanation: getOrCreateConversation validates only that the internship and
+    the student exist. It never checks that the student is assigned to the
+    requesting trainer or to that internship. Because getMessages grants access
+    when `conversation.student === uid || conversation.trainer === uid`,
+    creating the row immediately grants full message read/write access.
+  Impact: any trainer can initiate and read a private channel with any student,
+    including students they do not supervise; bypasses the scoping applied in
+    getTrainerConversations/getInternshipStudents.
+  Remediation: require `student.assignedTrainer === req.user._id` and that
+    `student.currentInternship` matches the internship before creating or
+    returning a conversation.
+
+SA-010 — IDOR on certificate detail / listing / QR endpoints
+  Location: server/routes/certificate.routes.js:21-24; controllers
+            certificate.controller.js:91-123, 205-224, 321-338
+  Category: Inconsistent authorization across endpoints
+  Explanation: getCertificateById and downloadCertificatePDF check student
+    ownership; getCertificateQR does not. getCertificates returns all records
+    to a trainer (no trainer scoping) with `studentId` populated to
+    `name email`, and accepts an arbitrary `limit` (unbounded `parseInt(limit)`).
+  Impact: student email disclosure to trainers who do not supervise them; QR
+    fetch leaks certificateNumber/verificationId for any id.
+  Remediation: apply ownership/assignment checks to every certificate route;
+    clamp `limit`; prefer verificationId-bearing actions be admin-only.
+
+SA-011 — Pinned messages retrievable without conversation membership
+  Location: server/routes/discussion.routes.js:39; controllers discussion.controller.js:593-605
+  Category: Missing object-level authorization (probable)
+  Explanation: getPinnedMessages performs no access check equivalent to the one
+    in getMessages. Any authenticated user supplying a conversationId receives
+    pinned message bodies plus sender name/email.
+  Status: Probable — depends on whether ObjectId exposure elsewhere makes
+    conversationId guessable; recommend runtime verification in a test env.
+
+SA-012 — Any trainer can review any submission (no ownership check)
+  Location: server/routes/task.routes.js:18; controllers task.controller.js:250-305
+  Category: Missing function/object-level authorization
+  Explanation: reviewSubmission only requires `authorize('admin','trainer')`
+    and accepts an arbitrary submission id; it does not verify the task was
+    assigned by that trainer. It also sets `marks` without bounds validation.
+  Impact: cross-cohort grade manipulation, unauthorized outcome changes; a
+    rogue trainer can approve/reject work for students they do not teach.
+  Remediation: verify `task.assignedBy === req.user._id` (unless admin) and
+    validate marks range server-side.
+
+SA-013 — Trainer can read applications for any internship
+  Location: server/routes/application.routes.js:21; controllers application.controller.js:158-171
+  Category: Missing object-level authorization
+  Explanation: getInternshipApplications accepts any internshipId and returns
+    applicant `name email collegeName course year skills avatar`. The
+    equivalent list endpoint (getAllStudents) does scope trainers to their
+    assigned students, so this is an inconsistency.
+  Remediation: restrict to internships the trainer owns/is assigned to.
+
+SA-014 — Unescaped user input interpolated into MongoDB $regex
+  Location: certificate.controller.js:99-105; student.controller.js:19-26;
+            task.controller.js:63-65; discussion.controller.js:213-215;
+            feedback.controller.js:115-121
+  Category: NoSQL operator injection / ReDoS
+  Explanation: `search` values are passed straight into `{ $regex: search,
+    $options: 'i' }` with no `escapeRegex` (the helper exists and is used
+    correctly in article.controller.js:12 and notice.controller.js:13) and no
+    type coercion. An object/array value reaching these fields (e.g. via a
+    JSON body, before any validator — note that these routes have no
+    express-validator) would be interpreted as an operator; attacker-supplied
+    regex metacharacters also allow quadratic-behavior patterns.
+  Impact: query condition manipulation on search endpoints (data-scoping is
+    still enforced for the student branch in getCertificates/getTasks) and
+    CPU-exhaustion risk. Rated Medium because authentication is required for
+    most of these paths and no auth-bypass sink was found.
+  Remediation: apply escapeRegex + `String(...)` coercion in every regex
+    search, or standardize on $text indexes; add schema/type validation.
+
+SA-015 — File upload validation is ineffective
+  Location: server/middleware/upload.js:7-28; controllers/upload.controller.js:11,50,66;
+            services/cloudinary.service.js:15-29
+  Category: Unsafe file upload handling
+  Explanation:
+    a) `req.body.folder` (attacker-controlled) is concatenated into the
+       Cloudinary folder `stackamit/${folder}`, so any authenticated user can
+       write assets into arbitrary folders of the cloud account.
+    b) Validation is based only on the client-declared MIME type; no magic-byte
+       check, no extension check at the middleware level, and the
+       `any: ['*']` bucket accepts everything.
+    c) `allowed_formats` is not a Cloudinary upload API parameter, so the
+       folder-based format restriction in cloudinary.service.js silently does
+       nothing.
+    d) `uploadDocument` uses `resource_type: 'raw'`, so stored files are
+       served by Cloudinary without transformation/inline-rendering controls.
+  Impact: content stored in attacker-chosen locations, non-image/zip payloads
+    accepted, potential for hosting attacker-controlled content on the
+    company's Cloudinary domain (predictable URLs).
+  Remediation: whitelist folders server-side; validate magic bytes and
+    extension; enforce resource_type per explicit route; use Cloudinary
+    `resource_whitelist`/moderation or a separate restricted folder; serve
+    downloads with `attachment` disposition.
+
+SA-016 — JWT/cookie secret strength and algorithm pinning
+  Location: server/services/auth.service.js:4-26; server/middleware/auth.js:25;
+            server/socket/index.js:33; server/.env (values redacted)
+  Category: Weak cryptographic configuration
+  Explanation: JWT_SECRET and COOKIE_SECRET were observed to be short
+    (< 40 characters) passphrases; `jwt.verify` is called without an
+    `algorithms: ['HS256']` option in both the HTTP and socket paths. The
+    same secret signs the access token used for socket authentication and for
+    `cookieParser`.
+  Impact: increased offline brute-force risk if a token is captured;
+    algorithm-confusion exposure if a dependency or future code path accepts
+    `none`/RS256-key substitution.
+  Remediation: use 256-bit random secrets from a managed secret store; pass
+    `{ algorithms: ['HS256'] }` to every verify call; use distinct secrets for
+    access, refresh, and cookie signing.
+
+SA-017 — OTP strength and brute-force exposure
+  Location: server/models/OTP.js:39-41; controllers/auth.controller.js:82-99, 310-326
+  Category: Weak randomness / missing rate limiting on verification
+  Explanation: OTPs are 6-digit values produced with `Math.random()`
+    (non-cryptographic) and 10-minute lifetime. The verification and
+    reset-password handlers impose no per-address or per-record attempt cap
+    (the global auth limiter allows 100 FAILED requests per IP per 15 minutes
+    and excludes successful ones), no max-attempts flag on the OTP record, and
+    no OTP invalidation after failure. An attacker who can register/forgot
+    against a target gets roughly 100 guesses per IP per window per OTP, and
+    more from multiple source IPs.
+  Impact: email-OTP bypass -> account verification or password reset for a
+    known email address.
+  Remediation: use crypto.randomInt; store only a hash of the OTP; add
+    attempts/increments and invalidate after 3-5 failures; apply a strict
+    verification limiter (e.g. 5 per email per 15 min).
+
+SA-018 — Authentication rate limiting is far too permissive
+  Location: server/server.js:100-155
+  Category: Insufficient throttling / protection against credential attacks
+  Explanation: general API limit is 1000 requests/15 min; auth limit is 100
+    failed attempts/15 min per IP, `skipSuccessfulRequests: true`, and the
+    refresh-token route is entirely excluded from limiting. With `trust proxy`
+    1, distributed source addresses easily multiply this budget.
+  Impact: password guessing, OTP guessing, enumeration and resource abuse
+    without tripping controls.
+  Remediation: per-account + per-IP limits with escalating lockout on
+    /login, /verify-email, /reset-password, /forgot-password; use a store
+    (Redis) instead of in-memory; keep refresh limited but generous.
+
+SA-019 — Account and user-base enumeration
+  Location: controllers/auth.controller.js:28-31, 132-163; routes/auth.routes.js:19
+  Category: Information disclosure / user enumeration
+  Explanation: /register answers "Email already registered" (409) while a new
+    address proceeds; /resend-otp distinguishes "Student not found" (404),
+    "Email is already verified" (400) and success (200); /forgot-password
+    deliberately returns a generic message (good), but its sibling endpoints
+    negate that protection.
+  Impact: an unauthenticated attacker can confirm which email addresses hold
+    StackAmit accounts and whether they are verified — direct fuel for
+    phishing and credential stuffing (see SA-001 for identity data).
+  Remediation: return identical responses/status codes regardless of record
+    existence; require the same OTP flow for resend.
+
+SA-020 — Access token kept in localStorage and echoed in the login body
+  Location: client/src/context/AuthContext.jsx:31-34; client/src/services/api.js:44-58, 153-165;
+            controllers/auth.controller.js:207-215
+  Category: Insecure token storage
+  Explanation: the login response body contains `accessToken`, which the SPA
+    persists in localStorage and replays as a Bearer header; the
+    server also honors Bearer tokens over cookies (middleware/auth.js:9-11).
+    localStorage is readable by any script and is not scoped per origin path.
+    Additionally the API cache (client/src/services/apiCache.js) writes
+    authenticated GET responses to localStorage.
+  Impact: any injected/malicious script (or a compromised third-party
+    dependency) can exfiltrate a working access token and cached personal
+    data; no HTTP-only protection. Mitigated in part by the 15-minute token
+    lifetime and the httpOnly refresh cookie (not readable by JS).
+  Remediation: rely on the httpOnly access cookie + CSRF token (or
+    SameSite=strict plus Origin check) and remove the Bearer-from-localStorage
+    path; avoid caching PII in localStorage, or use sessionStorage with short
+    TTLs.
+
+9. LOW-SEVERITY FINDINGS
+--------------------------------------------------------------------------------
+
+SA-021 — Refresh token stored in plaintext on the user document
+  Location: server/models/User.js:52; controllers/auth.controller.js:192, 233, 246
+  Category: Sensitive data at rest
+  Explanation: the raw JWT is persisted and compared with `!==`. A database
+    read (or an accidentally exposed dump/export) hands over live refresh
+    tokens for every user; a single stored value also breaks multi-device
+    sessions.
+  Remediation: store a hash (SHA-256) of the token or a token family/id; keep
+    a small allow-list of active sessions.
+
+SA-022 — requirePasswordChange middleware defined but never enforced
+  Location: server/middleware/auth.js:64-73 (zero usages found in the repo)
+  Category: Client-side-only enforcement of a security control
+  Explanation: mustChangePassword is only enforced by the React
+    ProtectedRoute (client/src/App.jsx:94-96). An accounts' temporary
+    password (issued by an admin reset, SA-028) can therefore be used to call
+    every API directly without ever changing it.
+  Remediation: attach requirePasswordChange to all non-auth protected routers,
+    leaving /change-password and /me reachable.
+
+SA-023 — PII and internal details written to logs
+  Location: controllers/application.controller.js:90,94; discussion.controller.js:191,200,208,231,268,281,312;
+            student.controller.js:44; internship.controller.js:82,147,154,180; email.service.js:16-25; errorHandler.js:41-47
+  Category: Insecure logging
+  Explanation: user ids, emails and record identifiers are logged on every
+    request; morgan 'combined' logs full URLs (including query strings such as
+    `?certificateNumber=`); when SendGrid is not configured, the intended
+    recipient and subject are logged; dev mode logs full stack traces (and
+    returns them, gated by NODE_ENV).
+  Impact: PII accumulation in log pipelines; log-forging risk amplified by the
+    vulnerable morgan version (SA-006).
+  Remediation: log structured, non-PII fields; redact query values; disable
+    body/stack logging in production; sanitize request URLs before logging.
+
+SA-024 — Mass assignment in admin student update
+  Location: server/controllers/student.controller.js:141-162 (`const updates = req.body; Object.assign(student, updates)`)
+  Category: Mass assignment
+  Explanation: although the route is admin-only, the payload is assigned
+    unfiltered onto a Mongoose discriminator document — role, isActive,
+    isVerified, password and deletedAt can be set without audit of the intent.
+  Impact: lowest practical risk (admin privilege already required) but it
+    removes the field-level audit trail and makes any CSRF/compromised-admin
+    scenario far more damaging.
+  Remediation: allow-list updatable fields (as done in
+    updateStudentProfile) and record old/new values in the activity log.
+
+SA-025 — Student can submit a task assigned to them by any trainer
+  Location: server/controllers/task.controller.js:162-222
+  Category: Business-logic authorization gap
+  Explanation: submitTask checks the task exists but not that
+    `task.assignedTo` includes the requester. Combined with SA-007 (task ids
+    readable), a student can create submissions and marks-bearing status
+    changes on another learner's task. There is also no deadline enforcement
+    (`task.dueDate` is never compared to now).
+  Remediation: verify assignment ownership and deadline before accepting a
+    submission.
+
+SA-026 — Online-user identifier list exposed to any authenticated user
+  Location: server/routes/discussion.routes.js:41; controllers discussion.controller.js:607-616; socket/index.js:61,340
+  Category: Information disclosure
+  Explanation: GET /api/discussions/online-users returns every connected user
+    id (and the socket layer broadcasts name/role on connect) with no scoping.
+  Remediation: restrict presence to participants of a shared conversation.
+
+SA-027 — Predictable certificate numbers and generation race
+  Location: server/models/Certificate.js:61-66
+  Category: Weak identifier generation / race condition
+  Explanation: `MTC-<year>-<countDocuments()+1>` is both enumerable and
+  racy (concurrent issuance yields duplicates or collisions against the unique
+  index, surfacing as a 500 with the raw MongoDB error).
+  Remediation: use a random/Crockford base-32 identifier or an atomic counter
+  document; keep verificationId as the unguessable element.
+
+SA-028 — Temporary password returned in the HTTP response body
+  Location: server/controllers/student.controller.js:261-279; trainer.controller.js:305-321
+  Category: Credential exposure via response
+  Explanation: the admin reset endpoints return `tempPassword` in JSON rather
+    than mailing it; the value lands in browser history, proxy logs and
+    Redux/network tooling. generateTempPassword also strips all special
+    characters and truncates to 10 alphanumeric characters, reducing entropy.
+  Remediation: deliver via email only (one-time, must-change), or return once
+    with explicit no-store headers; use a full-charset CSPRNG password.
+
+10. INFORMATIONAL OBSERVATIONS
+--------------------------------------------------------------------------------
+
+SA-029 — Inconsistent authorization role shape
+  server.js:75-77 passes `CLIENT_URL.split(',')` (an array) to the HTTP CORS
+  middleware, while socket/index.js:15 passes the raw string to Socket.io.
+  Keep one canonical origin list; validate `Origin` server-side and reject
+  unlisted origins explicitly.
+
+SA-030 — Socket.io CORS origin cannot contain a comma-separated list
+  With multiple CLIENT_URL values, socket CORS will fail to match any origin
+  (functional and security-configuration drift).
+
+SA-031 — Missing browser hardening headers / policies
+  helmet runs with defaults only: no Content-Security-Policy, no
+  frame-ancestors/CSP-based clickjacking defense, no HSTS configuration, and
+  netlify.toml sets only Cache-Control. No explicit HTTPS enforcement is
+  configured in the repository. `robotProtection`/referrer-policy are also
+  defaults. Authenticated pages (dashboard, admin) have no `no-store` cache
+  directive. Recommend a CSP (even report-only), HSTS with preload, and
+  explicit cache controls on authenticated routes.
+
+SA-032 — Public feedback endpoint
+  POST /api/feedback/public accepts arbitrary name/email/message with no
+  captcha, no length/shape validation beyond presence, and triggers an
+  in-app notification to every admin (notifyAdmins), enabling notification
+  flooding and stored-payload churn. Errors from getAllFeedback return
+  `err.message` to the client. (Rendering is React-escaped, so this is not a
+  confirmed XSS.)
+
+SA-033 — Raw exception messages returned to clients
+  internship.controller.js:67,187 and feedback.controller.js:147 respond with
+  `err.message`, leaking internal/driver details regardless of NODE_ENV.
+
+SA-034 — Password policy mismatch
+  models/User.js enforces a 6-character minimum while the validators require 8
+  plus complexity; the complexity regex is anchored only at the start, so it
+  does not reliably require all four classes (it matches a leading character
+  class only). Any code path that creates users without the validator
+  (register/seedAdmin/admin creation) can therefore accept a 6-character
+  password.
+
+SA-035 — `process.env.CLIENT_URL` interpolated into single-origin URLs
+  Certificate/application emails build verification links from CLIENT_URL; if
+  it holds a comma-separated list the generated URL is malformed (and the
+  redirect target in email becomes unpredictable).
+
+SA-036 — Startup migrations mutate data on every boot
+  server.js:285-317 runs updateMany on every start (same concern as SA-003,
+  but at least it is outside the request path).
+
+SA-037 — `cookieParser` uses the same secret space as tokens
+  cookieParser(process.env.COOKIE_SECRET) signs cookies; ensure this secret is
+  distinct from token-signing secrets (see SA-016). `clearTokenCookies` does
+  not restate `secure`/`sameSite` attributes, which is benign but inconsistent.
+
+11. AUTHENTICATION AND AUTHORIZATION REVIEW
+--------------------------------------------------------------------------------
+Authentication mechanism: JWT access (15 min) + JWT refresh (7 d), delivered
+in httpOnly cookies scoped by path for refresh, and duplicated in the JSON
+login response for Bearer usage. Password hashing: bcrypt with cost 12
+(configurable). Email OTP for registration and reset.
+
+PASSED checks
+  + Password field is `select: false` and stripped in toJSON (User.js:25, 76-81).
+  + bcrypt comparison used for login and change-password; no comparison
+    shortcuts; consistent 401 message on login for unknown email vs bad
+    password (auth.controller.js:169-185).
+  + Refresh rotation compares the stored token and clears cookies on failure;
+    deactivated accounts are rejected in both `protect` and refresh paths.
+  + Logout invalidates the stored refresh token server-side.
+  + Cookie flags are appropriate in production (httpOnly, secure,
+    SameSite=strict, refresh scoped to /api/auth/refresh).
+  + `protect` re-loads the user from the database on every request (no
+    blind trust of token claims for role/isActive).
+  + Admin/trainer/student route groups are largely wrapped with `authorize`,
+    and notice/article/feedback/certificate-admin routes are correct.
+  + Article and Notice modules demonstrate the expected pattern: object-level
+    ownership checks, enum whitelists, regex escaping, ObjectId validation,
+    draft content never leaking to public endpoints.
+
+FAILED / gap checks
+  - Function-level authorization missing on GET /api/internships,
+    /api/internships/:id, GET /api/settings/:key, GET /api/tasks/:id,
+    GET /api/discussions/:id/pinned, GET /api/discussions/online-users,
+    GET /api/certificates/:id/qr (see SA-004, 007, 008, 010, 011, 026).
+  - Object-level authorization missing on trainer conversation creation,
+    submission review, internship application listing, task submission
+    (SA-009, 012, 013, 025).
+  - Unauthenticated certificate verification over-discloses (SA-001/002).
+  - mustChangePassword is not enforced server-side (SA-022).
+  - Enumeration still possible through register/resend-OTP (SA-019).
+  - No session invalidation on password reset (all other devices keep valid
+    refresh tokens until rotation).
+
+12. API SECURITY REVIEW
+--------------------------------------------------------------------------------
+  * Consistency is the main weakness: sibling endpoints on the same resource
+    implement (or omit) checks differently — certificate download vs QR,
+    settings list vs settings-by-key, students list scoping vs applications
+    list scoping.
+  * Excessive data exposure is pervasive via `populate(..., 'name email ...')`
+    on list endpoints reachable by non-admin roles.
+  * Pagination is unclamped on several routes (`limit: parseInt(limit)` with
+    no maximum in certificate, application, task, discussion, student,
+    notification listings) while article/notice/feedback correctly clamp —
+    enabling oversized reads.
+  * Sort injection risk: `sortBy`/`order` from query are used to build the
+    sort object in student.controller.js:32 and feedback.controller.js:124
+    without a whitelist (low impact; Mongoose rejects invalid keys but
+    unexpected field-ordering/sort behavior is possible).
+  * No method-level guards against unexpected verbs; no GraphQL; no batch
+    endpoints; `/api/reports/export` is admin-only (correct).
+  * Rate limiting exists but is too permissive and in-memory (SA-018).
+  * Errors are handled centrally with reasonable mapping; the exception is the
+    three handlers that return `err.message` (SA-033).
+  * CORS is an explicit allow-list from configuration (good) — not wildcard —
+    with credentials enabled; see SA-029/030 for shape inconsistency.
+
+13. INJECTION AND INPUT VALIDATION REVIEW
+--------------------------------------------------------------------------------
+  * No SQL (MongoDB only). No `eval`, `Function`, `child_process`, dynamic
+    `require`, or template-server-side rendering; no unsafe deserialization.
+  * No path traversal in application code: filesystem access is limited to
+    fixed asset paths (server/assets/signature.png, logo.jpg) in
+    certificate.service.js:10-15; uploads are buffered in memory and sent to
+    Cloudinary — no local write of user files.
+  * PDF/CSV filenames are built from controlled values
+    (`Certificate-<certificateNumber>.pdf`, `Offer-Letter-<name>-<id>.pdf`);
+    `studentName` originates from user profile data and is inserted into the
+    Content-Disposition header without quoting sanitization — a header
+    injection edge case worth normalizing (recommend stripping `"` and
+    newlines).
+  * MongoDB operators: no `$where`, no `mapReduce` with user JS, no
+    user-supplied aggregation pipeline. The realistic issue is unescaped
+    `$regex` (SA-014) and `$text` search (safe).
+  * Input validation coverage is uneven: auth routes use express-validator
+    thoroughly (register/login/reset/change-password), but students, tasks,
+    applications, discussions, uploads, certificates and settings routes have
+    no validator layer and rely on Mongoose schema enforcement only.
+  * Mass assignment: task create/update (spread of req.body / Object.assign)
+    and admin student update (SA-024); application withdraw/approve flows use
+    explicit fields (good).
+  * XSS: frontend renders all untrusted strings as React children; a repo-wide
+    search for `dangerouslySetInnerHTML` and `innerHTML` returned zero
+    matches. The custom Markdown renderer in
+    client/src/pages/public/ArticleViewPage.jsx:24-64 emits React nodes and
+    constrains href/src to `https?://` or `/` via regex, and links carry
+    `rel="noopener noreferrer"`. Notice `actionUrl` is rendered as an href
+    after a client-side format check, but there is no server-side
+    validation of that field (admin-privileged input only) — recommend a
+    server-side allow-list of `/` and `https://`.
+  * Open redirect: no `redirect`/`next` query parameter handling was found in
+    the SPA or API. Client route guards redirect by role only.
+
+14. BUSINESS LOGIC SECURITY REVIEW
+--------------------------------------------------------------------------------
+  * Internship applications: good — one active application per student is
+    enforced server-side, deadline and seat-capacity checks are performed
+    before insert, withdraw is ownership-scoped, approval increments seats and
+    assigns trainer/internship with trainer-capacity validation.
+  * Weaknesses:
+      - seat counter and application creation are not atomic (concurrent
+        approvals can exceed `seats.total`);
+      - application approval is allowed to trainers (route line 22) with no
+        check that the trainer is connected to that internship;
+      - `completeInternship` is admin-only (correct) but does not roll back
+        `seats.filled`, so capacity is permanently consumed for completed
+        learners — a business-integrity issue rather than a security hole;
+      - no server-side enforcement of mustChangePassword (SA-022) means an
+        admin-issued temporary password grants full API access;
+      - task submissions lack deadline checks (SA-025);
+      - certificate generation is trainer-permitted with no check that the
+        requesting trainer supervises the student, so a rogue trainer can
+        issue certificates for arbitrary student/internship pairs and trigger
+        emails with company-branded PDFs (routes line 20; controller
+        12-88). This is the most business-relevant logic gap found.
+  * Notices/settings/articles: draft/expiry state is derived at query time
+    and non-public notices uniformly answer 404 — this was implemented
+    correctly.
+
+15. CONFIGURATION AND DEPENDENCY REVIEW
+--------------------------------------------------------------------------------
+  * Secrets are NOT committed: the repository's tracked file list contains
+    only `client/.env.sample`; `.gitignore` excludes `.env`, and
+    server/.env and client/.env exist on disk only. Local .env files hold
+    live MongoDB, JWT, cookie, certificate, SendGrid and Cloudinary
+    credentials (values redacted here by design). Treat these as production
+    secrets on a developer workstation and rotate them if the machine is
+    shared; confirm Render/Netlify store them only as managed env vars.
+  * `dns.setServers(['8.8.8.8','8.8.4.4'])` (server.js:8) overrides system
+    DNS globally for the process — availability/privacy consideration, and
+    it can break SRV resolution in restricted networks.
+  * `trust proxy` is set to 1, appropriate for a single Render hop; combined
+    with the vulnerable proxy-addr version (SA-006) this is the dependency
+    most worth patching first because rate-limit identity depends on it.
+  * NODE_ENV-driven behavior: stack traces only in development (correct);
+    helmet/CSP defaults (see SA-031).
+  * Body limits: 10 MB JSON/urlencoded and 10 MB per uploaded file, up to 10
+    files — generous but not abusive for this feature set.
+  * Vulnerable installed packages: see SA-006 (1 critical, 5 high, 3 moderate
+    on the server; 2 high on the client). `express 4.22.2` in node_modules is
+    ahead of `package.json`'s `^4.21.2` range resolution and still carries a
+    vulnerable `qs`.
+  * Unused dependency observation: `CERTIFICATE_SECRET` is defined in
+    server/.env but referenced nowhere in code — an unused signing secret
+    that suggests certificate HMAC verification was intended but never
+    implemented (relevant to SA-027).
+  * `bcryptjs` (pure JS) instead of native `bcrypt`: performance-only note
+    under login load.
+
+16. FINDINGS REQUIRING RUNTIME VERIFICATION (NOT TESTED)
+--------------------------------------------------------------------------------
+The following were deliberately left unverified because they require a
+reachable authorized environment, credentials, or state-changing requests that
+this engagement prohibits. They should be confirmed in an isolated test
+environment with seeded test accounts:
+  a) SA-002 empty-query verification actually returns a record (depends on
+     Atlas having at least one certificate).
+  b) SA-003/SA-004 reaching the internship fallback branch through the
+     student role and observing data mutation.
+  c) SA-011 pinned-message access with a conversationId belonging to another
+     pair.
+  d) SA-014 operator-injection behavior of `$regex` fields when an object is
+     submitted (Mongoose strict-typing may coerce or reject).
+  e) SA-017 practical OTP guess rate under the deployed rate limiter (may be
+     further limited by Render edge controls not visible in this repo).
+  f) SA-020 token theft value (depends on whether an XSS primitive exists;
+     none was found statically).
+  g) Live header/CORS posture: CSP absence, HSTS, cookie attributes, and
+     preflight behavior with multiple CLIENT_URL values (SA-029..031).
+  h) Cloudinary upload behavior for spoofed MIME types and `folder` traversal
+     values (SA-015) — requires an upload, which this engagement forbids.
+  i) Whether Seat-counter races (section 14) are reachable in practice.
+Also skipped by design: load/stress testing, brute forcing, automated
+scanning, DoS validation of the brace-expansion/qs advisories, dependency
+installation/updates, and any action that could alter production data.
+
+17. RECOMMENDED REMEDIATION PLAN (PRIORITY ORDER)
+--------------------------------------------------------------------------------
+P0 — Immediate (anonymous-exploitable data exposure and integrity loss)
+  1. SA-002/SA-001: require a non-empty certificateNumber or verificationId in
+     /api/certificates/verify and return a strict field allow-list (no student
+     email/college). Ship together with SA-027 random certificate numbers.
+  2. SA-003/SA-004: strip all writes out of GET /api/internships and move the
+     one-off data fix to a script; add `authorize('admin','trainer')` to the
+     management list/detail routes.
+  3. SA-006: patch dependencies, starting with proxy-addr/express (rate-limit
+     identity), then axios, morgan, engine.io, body-parser.
+P1 — High priority (within 1-2 sprints)
+  4. SA-005: stop emailing new passwords; invalidate all sessions on reset.
+  5. SA-017/SA-018/SA-019: crypto-random hashed OTPs with attempt caps; strict
+     per-endpoint limits using a shared store; uniform responses for
+     register/resend-OTP.
+  6. SA-007/SA-008/SA-009/SA-010/SA-011/SA-012/SA-013/SA-025: add the missing
+     function- and object-level authorization checks; centralize them in
+     reusable guards (e.g. `ownsOrAdmin`, `belongsToConversation`).
+  7. SA-015: server-side folder allow-list, magic-byte sniffing, real
+     format enforcement (resource whitelist / separate upload presets), and
+     disposition control for raw documents.
+P2 — Medium priority
+  8. SA-016: rotate to 256-bit secrets per purpose; pin `algorithms` in every
+     `jwt.verify`.
+  9. SA-020: move fully to httpOnly cookie auth (+CSRF defense) and stop
+     returning/persisting access tokens in localStorage; review the API cache
+     contents for PII.
+ 10. SA-022: enforce requirePasswordChange server-side.
+ 11. SA-014: escapeRegex + String coercion for every user-supplied regex.
+ 12. SA-031: add CSP (report-only first), HSTS, frame-ancestors, referrer
+     policy, and no-store on authenticated pages via helmet + netlify.toml.
+P3 — Hardening / hygiene
+ 13. SA-021 (hash refresh tokens), SA-023 (PII-free logging + log-forging
+     fixes), SA-024/SA-026/SA-028 (allow-list fields, scope presence, deliver
+     temp passwords out-of-band), SA-029..SA-037 (config consistency, error
+     message hygiene, password-policy alignment, atomic seat counters,
+     implement or remove CERTIFICATE_SECRET).
+ 14. Process: add automated `npm audit`/SAST in CI, an authorization test
+     suite per route (matrix of role x endpoint), and a secrets manager for
+     production configuration.
+
+18. AREAS NOT TESTED AND REASONS
+--------------------------------------------------------------------------------
+  * Dynamic/penetration testing of the deployed site and API — no authorized
+    test environment, credentials, or written permission for the production
+    URLs was provided; the brief forbids assuming authorization from repository
+    references.
+  * Write-path authorization (POST/PUT/PATCH/DELETE) executed live — would
+    alter application state and real user data (prohibited).
+  * File upload exploitation — prohibited (no uploads during the engagement).
+  * Database inspection — prohibited; no DB connection or query was made.
+  * Authentication bypass/brute force, OTP guessing, credential stuffing,
+    session-hijacking chains, DoS/load, automated scanners, dependency updates,
+    Git operations beyond read of .git/index — all prohibited or state-changing.
+  * SendGrid/Cloudinary/MongoDB Atlas/Render/Netlify account-side
+    configuration (MFA, bucket ACLs, TLS settings, WAF, log retention) —
+    third-party systems outside this repository's authorized scope.
+  * Binary/asset review of node_modules internals beyond lockfile-based audit.
+  * Mobile/desktop clients, third-party SSO, payment flows — not present.
+
+19. OVERALL ASSESSMENT AND LIMITATIONS
+--------------------------------------------------------------------------------
+Assessment: The codebase shows genuine security maturity in several areas —
+JWT refresh rotation with database-backed validation, bcrypt hashing,
+httpOnly/path-scoped refresh cookies, helmet, explicit CORS allow-lists,
+central error handling with production-safe responses, soft deletes, an audit
+activity log, and two modules (articles, notices) that implement ownership,
+enum, ObjectId and regex-escaping checks correctly. No authentication bypass,
+code injection, or stored XSS was identified.
+
+However, authorization is applied inconsistently rather than by default:
+roughly a dozen read/write endpoints rely either on nothing beyond
+authentication or on the frontend route guard, and the public certificate
+verification path discloses personal data to anonymous callers with only a
+guessable identifier as the gate. Combined with permissive rate limiting,
+non-cryptographic OTP generation, plaintext credential emailing, weak secret
+entropy, ineffective upload validation, and a critical installed dependency
+that undermines IP-based throttling, the practical risk to learner privacy and
+to credential issuance integrity is meaningful.
+
+Overall risk posture: HIGH for confidentiality of student PII, MEDIUM for
+integrity of credential issuance (certificates/offers/grades) and application
+state, MEDIUM for availability (dependency DoS paths, notification flooding),
+LOW for full account/administrative takeover at this time.
+
+Limitations: this is a static, read-only assessment. Exploitability was
+judged from source-level data flow; no request was sent to any deployed
+environment, and no state-changing check was performed. Absence of a confirmed
+exploit is not proof of security — items in section 16 must be validated in an
+authorized test environment, and this report should be re-issued after the P0
+and P1 remediations.
+
+Confidentiality: this document contains vulnerability details. Values of
+secrets, tokens, passwords and connection strings were deliberately NOT
+reproduced; only their names, locations and approximate lengths were noted.
+
+================================================================================
+END OF REPORT — Generated in strict read-only mode. No application file was
+created, modified, moved or deleted as part of this audit.
+================================================================================
+

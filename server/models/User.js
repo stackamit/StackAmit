@@ -21,7 +21,10 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
+      // SA-034: align the model floor with the auth validator (8) so any path
+      // that creates/updates a password WITHOUT the express-validator layer
+      // (seedAdmin, admin-created users) can no longer accept a 6-char secret.
+      minlength: [8, 'Password must be at least 8 characters'],
       select: false,
     },
     role: {
@@ -50,6 +53,11 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
     refreshToken: String,
+    // SA-021: SHA-256 digest of the active refresh token. New records store this
+    // only (raw refreshToken stays null); the legacy plaintext field remains for
+    // one release so pre-existing sessions can still be verified during the
+    // transition and is removed once every record is migrated.
+    refreshTokenHash: String,
     lastLogin: Date,
     deletedAt: Date,
   },
@@ -77,6 +85,8 @@ userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   delete obj.refreshToken;
+  // SA-021: never expose the refresh-token digest either.
+  delete obj.refreshTokenHash;
   return obj;
 };
 

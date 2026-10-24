@@ -32,7 +32,10 @@ export const getPublicInternships = asyncHandler(async (req, res) => {
       total = 0;
     }
 
-    // Fallback: try with only deadline + status filter (no search/category)
+    // Fallback: try with only deadline + status filter (no search/category).
+    // NOTE (SA-003): this is a READ-only retry. The one-time data repair that
+    // previously ran here (raw updateMany writing isDeleted/status on every GET)
+    // has been moved to scripts/repairInternshipFlags.mjs, invoked explicitly.
     if (total === 0 && !search) {
       console.log('[PublicInternships] No results, trying fallback...');
       try {
@@ -43,14 +46,6 @@ export const getPublicInternships = asyncHandler(async (req, res) => {
           internships = await Internship.find(fallbackQuery).sort(sort).skip(skip).limit(limit)
             .populate('createdBy', 'name').populate('assignedTrainer', 'name');
           total = fbTotal;
-          // Fix all documents using raw driver (bypasses Mongoose validation)
-          const col = Internship.collection;
-          await col.updateMany({}, { $set: { isDeleted: false } });
-          await col.updateMany(
-            { status: { $nin: ['published', 'closed', 'archived'] } },
-            { $set: { status: 'published' } }
-          );
-          console.log('[PublicInternships] Fixed documents');
         }
       } catch (fbErr) {
         console.error('[PublicInternships] Fallback error:', fbErr.message);
@@ -64,7 +59,8 @@ export const getPublicInternships = asyncHandler(async (req, res) => {
     });
   } catch (err) {
     console.error('[PublicInternships] FATAL:', err);
-    res.status(500).json({ success: false, message: err.message, data: { internships: [], total: 0, pages: 0, page: 1 } });
+    // SA-033: generic client message; keep the detail in the server log only.
+    res.status(500).json({ success: false, message: 'Failed to fetch internships', data: { internships: [], total: 0, pages: 0, page: 1 } });
   }
 });
 
@@ -129,6 +125,10 @@ export const getAllInternships = asyncHandler(async (req, res) => {
       query.deadline = { $gte: new Date() };
     }
 
+    // SA-004: never leak staff (trainer/admin) email addresses to students via
+    // the management list; students get names only.
+    const staffSelect = req.user.role === 'student' ? 'name' : 'name email';
+
     const skip = (page - 1) * limit;
     const sort = { [sortBy]: order === 'asc' ? 1 : -1 };
 
@@ -139,8 +139,8 @@ export const getAllInternships = asyncHandler(async (req, res) => {
           .sort(sort)
           .skip(skip)
           .limit(limit)
-          .populate('createdBy', 'name email')
-          .populate('assignedTrainer', 'name email'),
+          .populate('createdBy', staffSelect)
+          .populate('assignedTrainer', staffSelect),
         Internship.countDocuments(query),
       ]);
     } catch (err) {
@@ -149,7 +149,10 @@ export const getAllInternships = asyncHandler(async (req, res) => {
       total = 0;
     }
 
-    // Fallback: if nothing found, try with basic role-appropriate filter
+    // Fallback: if nothing found, try with basic role-appropriate filter.
+    // NOTE (SA-003): READ-only retry only. No database writes are performed on
+    // a GET; the historical bulk "fix documents" repair was moved out of this
+    // request path into scripts/repairInternshipFlags.mjs (explicit migration).
     if ((!internships || internships.length === 0) && !search) {
       console.log('[AdminInternships] No results, trying fallback...');
       try {
@@ -160,17 +163,9 @@ export const getAllInternships = asyncHandler(async (req, res) => {
         console.log('[AdminInternships] Fallback total:', rawTotal);
         if (rawTotal > 0) {
           internships = await Internship.find(fbQuery).sort(sort).skip(skip).limit(limit)
-            .populate('createdBy', 'name email')
-            .populate('assignedTrainer', 'name email');
+            .populate('createdBy', staffSelect)
+            .populate('assignedTrainer', staffSelect);
           total = rawTotal;
-          // Fix all documents using raw driver (bypasses Mongoose validation)
-          const col = Internship.collection;
-          await col.updateMany({}, { $set: { isDeleted: false } });
-          await col.updateMany(
-            { status: { $nin: ['published', 'closed', 'archived'] } },
-            { $set: { status: 'published' } }
-          );
-          console.log('[AdminInternships] Fixed documents');
         }
       } catch (fbErr) {
         console.error('[AdminInternships] Fallback error:', fbErr.message);
@@ -184,11 +179,18 @@ export const getAllInternships = asyncHandler(async (req, res) => {
     });
   } catch (err) {
     console.error('[AdminInternships] FATAL:', err);
-    res.status(500).json({ success: false, message: err.message, data: { internships: [], total: 0, pages: 0, page: 1 } });
+    // SA-033: generic client message; keep the detail in the server log only.
+    res.status(500).json({ success: false, message: 'Failed to fetch internships', data: { internships: [], total: 0, pages: 0, page: 1 } });
   }
 });
 
 // ─── Get Internship by ID ────────────────────────────────────────────────────
+// Object-level authorization (SA-004): the record is only returned to users
+// with a legitimate relationship to it.
+//   • admin            → always
+//   • creator / assigned trainer → always
+//   • other trainers   → only published postings (they may browse to apply/assist)
+//   • student          → only published & not-yet-expired; staff emails are stripped
 export const getInternshipById = asyncHandler(async (req, res) => {
   const internship = await Internship.findById(req.params.id)
     .populate('createdBy', 'name email')
@@ -198,6 +200,33 @@ export const getInternshipById = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Internship not found' });
   }
 
+  const uid = req.user._id.toString();
+  const creatorId = internship.createdBy?._id?.toString();
+  const assignedId = internship.assignedTrainer?._id?.toString();
+  const isAdmin = req.user.role === 'admin';
+  const isEditor = uid === creatorId || (assignedId && uid === assignedId);
+  const isPublished = internship.status === 'published'
+    && (!internship.deadline || new Date(internship.deadline) >= new Date());
+
+  if (req.user.role === 'student') {
+    if (!isPublished) {
+      return res.status(404).json({ success: false, message: 'Internship not found' });
+    }
+    // Do not disclose staff email to students
+    if (internship.createdBy) internship.createdBy = { _id: internship.createdBy._id, name: internship.createdBy.name };
+    if (internship.assignedTrainer) {
+      internship.assignedTrainer = {
+        _id: internship.assignedTrainer._id,
+        name: internship.assignedTrainer.name,
+        bio: internship.assignedTrainer.bio,
+      };
+    }
+  } else if (req.user.role === 'trainer' && !isEditor && !isPublished) {
+    // Trainer not connected to this non-published internship → treat as not found
+    return res.status(404).json({ success: false, message: 'Internship not found' });
+  }
+
+  void isAdmin; // admins fall through untouched
   res.status(200).json({ success: true, data: { internship } });
 });
 

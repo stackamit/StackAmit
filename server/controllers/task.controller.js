@@ -4,6 +4,7 @@ import { logActivity } from '../services/activityLog.service.js';
 import { createNotification, notifyAdmins } from '../services/notification.service.js';
 import { sendTaskAssignedEmail } from '../services/email.service.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { literalSearchRegex, canAccessTask, canReviewSubmission, canSubmitTask } from '../utils/authz.js';
 
 // ─── Create Task (Trainer/Admin) ─────────────────────────────────────────────
 export const createTask = asyncHandler(async (req, res) => {
@@ -61,7 +62,9 @@ export const getTasks = asyncHandler(async (req, res) => {
   if (status) query.status = status;
   if (priority) query.priority = priority;
   if (search) {
-    query.title = { $regex: search, $options: 'i' };
+    // SA-014: escape the term and force a literal match (no operator injection).
+    const rx = literalSearchRegex(search);
+    if (rx) query.title = rx;
   }
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -109,8 +112,19 @@ export const getTaskById = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Task not found' });
   }
 
-  // Fetch submission for this task (if student submitted)
-  const submission = await Submission.findOne({ taskId: task._id })
+  // SA-007: object-level authorization. A task (and its submissions) is only
+  // visible to the assigned student, the assigning trainer, or an admin.
+  if (!canAccessTask(req.user, task)) {
+    return res.status(403).json({ success: false, message: 'Not authorized to access this task' });
+  }
+
+  // Fetch submission for this task.
+  // • student  → only their own submission (never another student's)
+  // • trainer/admin → the submission for the task they manage
+  const submissionFilter = req.user.role === 'student'
+    ? { taskId: task._id, studentId: req.user._id }
+    : { taskId: task._id };
+  const submission = await Submission.findOne(submissionFilter)
     .populate('studentId', 'name email firstName lastName');
 
   res.status(200).json({ success: true, data: { task, submission } });
@@ -163,6 +177,11 @@ export const submitTask = asyncHandler(async (req, res) => {
   const task = await Task.findById(req.params.taskId);
   if (!task) {
     return res.status(404).json({ success: false, message: 'Task not found' });
+  }
+
+  // SA-025: a student may only submit a task that is assigned to them.
+  if (!canSubmitTask(req.user, task)) {
+    return res.status(403).json({ success: false, message: 'This task is not assigned to you' });
   }
 
   const existing = await Submission.findOne({ taskId: task._id, studentId: req.user._id });
@@ -260,6 +279,11 @@ export const reviewSubmission = asyncHandler(async (req, res) => {
   const submission = await Submission.findById(req.params.id).populate('taskId');
   if (!submission) {
     return res.status(404).json({ success: false, message: 'Submission not found' });
+  }
+
+  // SA-012: only the trainer who assigned the task (or an admin) may review it.
+  if (!canReviewSubmission(req.user, submission.taskId)) {
+    return res.status(403).json({ success: false, message: 'Not authorized to review this submission' });
   }
 
   submission.status = status;
