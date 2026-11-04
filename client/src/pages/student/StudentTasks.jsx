@@ -10,6 +10,9 @@ import {
   FiXCircle,
   FiRotateCcw,
   FiMessageSquare,
+  FiEye,
+  FiPaperclip,
+  FiX,
 } from "react-icons/fi";
 import api from "../../services/api";
 import toast from 'react-hot-toast';
@@ -20,6 +23,7 @@ const StudentTasks = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showSubmit, setShowSubmit] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
   const [submitForm, setSubmitForm] = useState({
     githubLink: "",
     liveUrl: "",
@@ -200,7 +204,12 @@ const StudentTasks = () => {
               ? submissionStatusInfo(t.submission.status)
               : null;
             return (
-              <div key={t._id} className="card p-6">
+              <div
+                key={t._id}
+                className="card p-6 cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => setSelectedTask(t)}
+                title="View task details"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 flex-1">
                     <div className="mt-1">{statusIcon(t.status)}</div>
@@ -271,9 +280,20 @@ const StudentTasks = () => {
                     >
                       {t.status}
                     </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTask(t);
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 text-primary-600 dark:text-primary-400"
+                      title="View details"
+                    >
+                      <FiEye size={16} />
+                    </button>
                     {canSubmit(t) && (
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setSubmitForm({
                             githubLink: t.submission?.githubLink || "",
                             liveUrl: t.submission?.liveUrl || "",
@@ -291,6 +311,126 @@ const StudentTasks = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Task Detail Modal */}
+      {selectedTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
+          onClick={() => setSelectedTask(null)}
+        >
+          <div
+            className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-2xl my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-dark-200 dark:border-dark-700">
+              <h2 className="text-xl font-bold text-dark-900 dark:text-white pr-8">
+                {selectedTask.title}
+              </h2>
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="p-1.5 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-400 shrink-0"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <span
+                  className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${statusColor(selectedTask.status)}`}
+                >
+                  {selectedTask.status}
+                </span>
+                <span
+                  className={`text-xs font-medium capitalize ${priorityColor(selectedTask.priority)}`}
+                >
+                  Priority: {selectedTask.priority}
+                </span>
+                <span className="text-xs text-dark-400">
+                  Due: {formatDate(selectedTask.dueDate)}
+                </span>
+                <span className="text-xs text-dark-400">
+                  Assigned by:{" "}
+                  <strong className="text-dark-600 dark:text-dark-300">
+                    {selectedTask.assignedBy?.name || "N/A"}
+                  </strong>
+                </span>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-dark-700 dark:text-dark-200 mb-1">
+                  Description
+                </h3>
+                <p className="text-sm text-dark-600 dark:text-dark-300 whitespace-pre-line">
+                  {selectedTask.description}
+                </p>
+              </div>
+
+              {selectedTask.instructions && (
+                <div>
+                  <h3 className="text-sm font-semibold text-dark-700 dark:text-dark-200 mb-1">
+                    Instructions to Complete
+                  </h3>
+                  <p className="text-sm text-dark-600 dark:text-dark-300 whitespace-pre-line">
+                    {selectedTask.instructions}
+                  </p>
+                </div>
+              )}
+
+              {selectedTask.attachments?.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-dark-700 dark:text-dark-200 mb-2">
+                    Attachments
+                  </h3>
+                  <div className="space-y-2">
+                    {selectedTask.attachments.map((a, i) => (
+                      <a
+                        key={i}
+                        href={a.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                      >
+                        <FiPaperclip size={14} />
+                        {a.filename || "Attachment"}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedTask.marks?.total > 0 && (
+                <p className="text-sm text-dark-500">
+                  Marks:{" "}
+                  <strong>
+                    {selectedTask.marks.obtained || "—"}/
+                    {selectedTask.marks.total}
+                  </strong>
+                </p>
+              )}
+
+              {canSubmit(selectedTask) && (
+                <div className="flex justify-end pt-2 border-t border-dark-200 dark:border-dark-700">
+                  <button
+                    onClick={() => {
+                      setSubmitForm({
+                        githubLink: selectedTask.submission?.githubLink || "",
+                        liveUrl: selectedTask.submission?.liveUrl || "",
+                        remarks: "",
+                      });
+                      setShowSubmit(selectedTask._id);
+                      setSelectedTask(null);
+                    }}
+                    className="btn-primary text-sm flex items-center gap-1.5"
+                  >
+                    <FiSend size={14} /> {getSubmitLabel(selectedTask)}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
