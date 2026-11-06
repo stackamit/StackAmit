@@ -20,6 +20,7 @@ import { seedAdmin } from './config/seedAdmin.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { initSocket } from './socket/index.js';
 import { evaluateCookieSecret } from './utils/secrets.js';
+import { startTaskDeadlineScheduler } from './services/taskDeadline.service.js';
 
 import Internship from './models/Internship.js';
 
@@ -384,6 +385,18 @@ const startServer = async () => {
     // ─────────────────────────────────────────
 
     initSocket(server);
+
+    // ─────────────────────────────────────────
+    // Scheduled submission-window sweep.
+    // Runs in-process (no external scheduler). Each run is atomic +
+    // idempotent (conditional claims), so restarts and overlapping ticks are
+    // safe, and pending closures/reminders are never lost. Opt-out via
+    // DISABLE_TASK_DEADLINE_JOBS=true for single-purpose dyno setups.
+    // ─────────────────────────────────────────
+
+    if (process.env.DISABLE_TASK_DEADLINE_JOBS !== 'true') {
+      startTaskDeadlineScheduler();
+    }
 
     // ─────────────────────────────────────────
     // Start HTTP Server

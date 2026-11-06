@@ -295,6 +295,138 @@ export const sendTaskAssignedEmail = async (
   return sendEmail(msg);
 };
 
+// Task-submission lifecycle: sent by the scheduled deadline sweep to students
+// who reached their original deadline without submitting. Reminder timing is
+// exactly the deadline, i.e. ~48h before the submission window closes.
+export const sendTaskReminderEmail = async (
+  to,
+  studentName,
+  taskTitle,
+  originalDeadlineText,
+  finalClosingText,
+  tasksUrl,
+) => {
+  const msg = {
+    to,
+    from: process.env.EMAIL_FROM,
+    subject: "Action Required: Your StackAmit Task Submission Is Pending",
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7fc; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 36px 30px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 24px; }
+        .header p { color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 15px; }
+        .body { padding: 30px; }
+        .body h2 { color: #1a1a2e; margin-top: 0; }
+        .body p { color: #555; line-height: 1.7; font-size: 14px; }
+        .details { background: #f8f9ff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px 20px; margin: 20px 0; }
+        .details p { margin: 8px 0; }
+        .details strong { color: #333; }
+        .warning { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; margin: 18px 0; }
+        .warning p { margin: 0; color: #92400e; font-size: 13px; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+        .footer { background: #f8f9ff; padding: 20px 30px; text-align: center; color: #888; font-size: 13px; }
+        .footer p { margin: 4px 0; }
+      </style></head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Action Required</h1>
+            <p>Your StackAmit Task Submission Is Pending</p>
+          </div>
+          <div class="body">
+            <h2>Hello ${studentName},</h2>
+            <p>This is a reminder that you have not yet submitted your assigned task:</p>
+            <div class="details">
+              <p><strong>Task:</strong> ${taskTitle}</p>
+              <p><strong>Original Deadline:</strong> ${originalDeadlineText}</p>
+              <p><strong>Final Submission Closing:</strong> ${finalClosingText}</p>
+            </div>
+            <p>Your original submission deadline has passed. However, StackAmit provides an additional <strong>48-hour submission window</strong>, so the task remains open for submission.</p>
+            <p>Please submit your task before <strong>${finalClosingText}</strong>. After this time, the submission window will automatically close and submissions will be disabled.</p>
+            <a href="${tasksUrl}" class="btn">Submit Your Task Now</a>
+            <div class="warning">
+              <p>Please log in to your StackAmit account and complete your submission before the closing time.</p>
+            </div>
+            <p style="margin-top: 20px;"><strong>Regards,</strong><br>StackAmit Team</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply directly.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+  return sendEmail(msg);
+};
+
+// Task-submission lifecycle: sent when an admin/trainer extends the deadline
+// or reopens a closed submission window for the student's task.
+export const sendTaskDeadlineExtendedEmail = async (
+  to,
+  studentName,
+  taskTitle,
+  newDeadlineText,
+  tasksUrl,
+) => {
+  const msg = {
+    to,
+    from: process.env.EMAIL_FROM,
+    subject: `Submission Reopened: ${taskTitle} - StackAmit`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head><style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7fc; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 36px 30px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 24px; }
+        .header p { color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 15px; }
+        .body { padding: 30px; }
+        .body h2 { color: #1a1a2e; margin-top: 0; }
+        .body p { color: #555; line-height: 1.7; font-size: 14px; }
+        .details { background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 8px; padding: 18px 20px; margin: 20px 0; }
+        .details p { margin: 8px 0; }
+        .details strong { color: #333; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+        .footer { background: #f8f9ff; padding: 20px 30px; text-align: center; color: #888; font-size: 13px; }
+        .footer p { margin: 4px 0; }
+      </style></head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Submission Reopened</h1>
+            <p>StackAmit Internship Platform</p>
+          </div>
+          <div class="body">
+            <h2>Hello ${studentName},</h2>
+            <p>The submission window for your task has been reopened with an extended deadline:</p>
+            <div class="details">
+              <p><strong>Task:</strong> ${taskTitle}</p>
+              <p><strong>Status:</strong> Reopened</p>
+              <p><strong>New Submission Deadline:</strong> ${newDeadlineText}</p>
+            </div>
+            <p>You can now submit or update your submission. Please complete it before the new deadline.</p>
+            <a href="${tasksUrl}" class="btn">View Task</a>
+            <p style="margin-top: 20px;"><strong>Regards,</strong><br>StackAmit Team</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} StackAmit. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply directly.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+  return sendEmail(msg);
+};
+
 export const sendCertificateEmail = async (
   to,
   studentName,

@@ -37,6 +37,7 @@ import AdminTrainers from './pages/admin/AdminTrainers';
 import AdminInternships from './pages/admin/AdminInternships';
 import AdminCertificates from './pages/admin/AdminCertificates';
 import AdminAssignments from './pages/admin/AdminAssignments';
+import AdminTasks from './pages/admin/AdminTasks';
 import AdminApplications from './pages/admin/AdminApplications';
 import AdminDiscussion from './pages/admin/AdminDiscussion';
 import AdminSettings from './pages/admin/AdminSettings';
@@ -153,6 +154,7 @@ function App() {
           <Route path="internships" element={<AdminInternships />} />
           <Route path="certificates" element={<AdminCertificates />} />
           <Route path="assignments" element={<AdminAssignments />} />
+          <Route path="tasks" element={<AdminTasks />} />
           <Route path="applications" element={<AdminApplications />} />
           <Route path="offer-letters" element={<AdminOfferLetters />} />
           <Route path="notices" element={<AdminNotices />} />

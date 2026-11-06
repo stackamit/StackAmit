@@ -1,5 +1,5 @@
 import DashboardLayout from './DashboardLayout';
-import { FiHome, FiUsers, FiUserCheck, FiBriefcase, FiSettings, FiAward, FiBell, FiGitMerge, FiFileText, FiMessageSquare, FiStar, FiUser, FiMail, FiEdit3, FiRadio } from 'react-icons/fi';
+import { FiHome, FiUsers, FiUserCheck, FiBriefcase, FiSettings, FiAward, FiBell, FiGitMerge, FiFileText, FiMessageSquare, FiStar, FiUser, FiMail, FiEdit3, FiRadio, FiClipboard } from 'react-icons/fi';
 
 const sidebarItems = [
   { path: 'overview', label: 'Overview', icon: <FiHome size={18} /> },
@@ -9,6 +9,7 @@ const sidebarItems = [
   { path: 'internships', label: 'Internships', icon: <FiBriefcase size={18} /> },
   { path: 'certificates', label: 'Certificates', icon: <FiAward size={18} /> },
   { path: 'assignments', label: 'Assignments', icon: <FiGitMerge size={18} /> },
+  { path: 'tasks', label: 'Task Management', icon: <FiClipboard size={18} /> },
   { path: 'applications', label: 'Applications', icon: <FiFileText size={18} /> },
   { path: 'offer-letters', label: 'Offer Letters', icon: <FiMail size={18} /> },
   { path: 'notices', label: 'Notices', icon: <FiRadio size={18} /> },

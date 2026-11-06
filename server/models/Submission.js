@@ -42,6 +42,14 @@ const submissionSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // Submission-editing support: `versions` increments on every student
+    // update, `lastUpdatedAt` marks the latest edit (kept separate from
+    // submittedDate so the original submission time is preserved), and
+    // isLateSubmission records that the work landed after the original
+    // deadline but inside the 48-hour late window.
+    versions: { type: Number, default: 1, min: 1 },
+    lastUpdatedAt: { type: Date, default: null },
+    isLateSubmission: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ['submitted', 'approved', 'rejected', 'resubmission_requested'],
@@ -63,8 +71,14 @@ const submissionSchema = new mongoose.Schema(
   }
 );
 
-submissionSchema.index({ taskId: 1, studentId: 1 });
 submissionSchema.index({ studentId: 1, status: 1 });
+// One submission per student per task, enforced at the DB level so two
+// concurrent first-submit requests can never create duplicate records.
+// This index also serves all former {taskId, studentId} lookups.
+// NOTE: before deploying, run scripts/checkSubmissionDuplicates.mjs against
+// the target database — creating a unique index fails if legacy duplicates
+// exist. The script is read-only and never deletes records.
+submissionSchema.index({ taskId: 1, studentId: 1 }, { unique: true });
 
 const Submission = mongoose.model('Submission', submissionSchema);
 export default Submission;

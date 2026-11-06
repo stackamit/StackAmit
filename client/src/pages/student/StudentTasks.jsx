@@ -16,6 +16,7 @@ import {
 } from "react-icons/fi";
 import api from "../../services/api";
 import toast from 'react-hot-toast';
+import { formatDateTimeIST } from "../../utils/dateTime";
 
 const StudentTasks = () => {
   const [tasks, setTasks] = useState([]);
@@ -54,7 +55,8 @@ const StudentTasks = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post(`/tasks/${showSubmit}/submit`, submitForm);
+      const { data } = await api.post(`/tasks/${showSubmit}/submit`, submitForm);
+      toast.success(data?.message || "Submission saved successfully");
       setShowSubmit(null);
       setSubmitForm({ githubLink: "", liveUrl: "", remarks: "" });
       fetchTasks();
@@ -89,32 +91,42 @@ const StudentTasks = () => {
       high: "text-orange-500",
       urgent: "text-red-500",
     })[p] || "";
-  const submissionStatusInfo = (s) =>
-    ({
-      submitted: {
-        label: "Submitted - Awaiting Review",
-        color:
-          "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-        icon: <FiClock size={14} />,
-      },
-      approved: {
-        label: "Approved",
-        color:
-          "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-        icon: <FiCheckCircle size={14} />,
-      },
-      rejected: {
-        label: "Rejected - Resubmission Allowed",
-        color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-        icon: <FiXCircle size={14} />,
-      },
-      resubmission_requested: {
-        label: "Resubmission Requested",
-        color:
-          "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-        icon: <FiRotateCcw size={14} />,
-      },
-    })[s] || { label: s, color: "", icon: null };
+  const submissionStatusInfo = (s, sub = {}) => {
+    const info =
+      {
+        submitted: {
+          label: "Submitted - Awaiting Review",
+          color:
+            "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+          icon: <FiClock size={14} />,
+        },
+        approved: {
+          label: "Approved",
+          color:
+            "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+          icon: <FiCheckCircle size={14} />,
+        },
+        rejected: {
+          label: "Rejected - Resubmission Allowed",
+          color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+          icon: <FiXCircle size={14} />,
+        },
+        resubmission_requested: {
+          label: "Resubmission Requested",
+          color:
+            "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+          icon: <FiRotateCcw size={14} />,
+        },
+      }[s] || { label: s, color: "", icon: null };
+    // Latest-terminology refinement (server-provided submission metadata):
+    // an edited pending-review submission shows as "Updated", late work as
+    // "Late Submission".
+    if (s === "submitted") {
+      if (sub.versions > 1 || sub.lastUpdatedAt) info.label = "Updated - Awaiting Review";
+      else if (sub.isLateSubmission) info.label = "Late Submission - Awaiting Review";
+    }
+    return info;
+  };
   const formatDate = (d) =>
     new Date(d).toLocaleDateString("en-US", {
       day: "numeric",
@@ -122,15 +134,19 @@ const StudentTasks = () => {
       year: "numeric",
     });
 
+  // Submission-window state (mirrors the backend's authoritative check).
+  // Once the automatic closure (deadline + 48h) or a job stamp closes the
+  // window, no submit/update is offered; the backend rejects it anyway.
+  const isWindowClosed = (t) => Boolean(t.isSubmissionClosed);
+
   const canSubmit = (t) => {
-    if (t.status === "pending") return true;
-    if (
-      t.submission &&
-      (t.submission.status === "rejected" ||
-        t.submission.status === "resubmission_requested")
-    )
-      return true;
-    return false;
+    if (isWindowClosed(t)) return false;
+    if (t.submission) {
+      // Edit while awaiting review, resubmit after rejection. Approved work
+      // is locked (matches backend: editing would invalidate the grade).
+      return t.submission.status !== "approved";
+    }
+    return ["pending", "in-progress", "late"].includes(t.status);
   };
 
   const getSubmitLabel = (t) => {
@@ -140,8 +156,18 @@ const StudentTasks = () => {
         t.submission.status === "resubmission_requested")
     )
       return "Resubmit";
+    if (t.submission && t.submission.status === "submitted") return "Edit Submission";
     return "Submit";
   };
+
+  // Mode of the currently open submit modal.
+  const submittingTask = tasks.find((x) => x._id === showSubmit) || null;
+  const submitModalTitle = submittingTask?.submission
+    ? submittingTask.submission.status === "rejected" ||
+      submittingTask.submission.status === "resubmission_requested"
+      ? "Resubmit Task"
+      : "Edit Submission"
+    : "Submit Task";
 
   return (
     <div>
@@ -201,7 +227,7 @@ const StudentTasks = () => {
         <div className="grid gap-4">
           {tasks.map((t) => {
             const subInfo = t.submission
-              ? submissionStatusInfo(t.submission.status)
+              ? submissionStatusInfo(t.submission.status, t.submission)
               : null;
             return (
               <div
@@ -221,7 +247,23 @@ const StudentTasks = () => {
                         {t.description}
                       </p>
                       <div className="flex flex-wrap gap-3 mt-2 text-xs text-dark-400">
-                        <span>Due: {formatDate(t.dueDate)}</span>
+                        <span>Due: {formatDate(t.effectiveDueDate || t.dueDate)}</span>
+                        {t.isDeadlineExtended && (
+                          <span className="font-medium text-orange-500">
+                            Reopened / Extended
+                          </span>
+                        )}
+                        {isWindowClosed(t) ? (
+                          <span className="font-medium text-red-500">
+                            Submission Closed
+                          </span>
+                        ) : (
+                          t.submissionClosesAt && (
+                            <span>
+                              Closes: {formatDateTimeIST(t.submissionClosesAt)}
+                            </span>
+                          )
+                        )}
                         <span
                           className={`font-medium ${priorityColor(t.priority)}`}
                         >
@@ -270,6 +312,12 @@ const StudentTasks = () => {
                               {formatDate(t.submission.submittedDate)}
                             </p>
                           )}
+                          {t.submission.lastUpdatedAt && (
+                            <p className="text-xs text-dark-400">
+                              Last updated:{" "}
+                              {formatDateTimeIST(t.submission.lastUpdatedAt)}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -297,11 +345,14 @@ const StudentTasks = () => {
                           setSubmitForm({
                             githubLink: t.submission?.githubLink || "",
                             liveUrl: t.submission?.liveUrl || "",
-                            remarks: "",
+                            remarks: t.submission?.remarks || "",
                           });
                           setShowSubmit(t._id);
                         }}
                         className="btn-primary text-xs flex items-center gap-1"
+                        title={
+                          t.submission ? "Edit your existing submission" : "Submit task"
+                        }
                       >
                         <FiSend size={12} /> {getSubmitLabel(t)}
                       </button>
@@ -349,8 +400,24 @@ const StudentTasks = () => {
                   Priority: {selectedTask.priority}
                 </span>
                 <span className="text-xs text-dark-400">
-                  Due: {formatDate(selectedTask.dueDate)}
+                  Due: {formatDate(selectedTask.effectiveDueDate || selectedTask.dueDate)}
                 </span>
+                {selectedTask.isDeadlineExtended && (
+                  <span className="text-xs font-medium text-orange-500">
+                    Reopened / Extended
+                  </span>
+                )}
+                {isWindowClosed(selectedTask) ? (
+                  <span className="text-xs font-medium text-red-500">
+                    Submission Closed
+                  </span>
+                ) : (
+                  selectedTask.submissionClosesAt && (
+                    <span className="text-xs text-dark-400">
+                      Closes: {formatDateTimeIST(selectedTask.submissionClosesAt)}
+                    </span>
+                  )
+                )}
                 <span className="text-xs text-dark-400">
                   Assigned by:{" "}
                   <strong className="text-dark-600 dark:text-dark-300">
@@ -418,7 +485,7 @@ const StudentTasks = () => {
                       setSubmitForm({
                         githubLink: selectedTask.submission?.githubLink || "",
                         liveUrl: selectedTask.submission?.liveUrl || "",
-                        remarks: "",
+                        remarks: selectedTask.submission?.remarks || "",
                       });
                       setShowSubmit(selectedTask._id);
                       setSelectedTask(null);
@@ -429,6 +496,14 @@ const StudentTasks = () => {
                   </button>
                 </div>
               )}
+              {!canSubmit(selectedTask) &&
+                !selectedTask.submission &&
+                isWindowClosed(selectedTask) && (
+                  <div className="p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800/50 text-xs text-red-600 dark:text-red-400">
+                    The submission window for this task is closed. Contact your
+                    trainer or admin if an extension is needed.
+                  </div>
+                )}
             </div>
           </div>
         </div>
@@ -444,7 +519,7 @@ const StudentTasks = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-xl font-bold text-dark-900 dark:text-white mb-6">
-              Submit Task
+              {submitModalTitle}
             </h2>
             <form onSubmit={handleSubmitTask} className="space-y-4">
               <div>
@@ -496,7 +571,13 @@ const StudentTasks = () => {
                   disabled={submitting}
                   className="btn-primary text-sm"
                 >
-                  {submitting ? "Submitting..." : "Submit Task"}
+                  {submitting
+                    ? "Submitting..."
+                    : submitModalTitle === "Edit Submission"
+                      ? "Update Submission"
+                      : submitModalTitle === "Resubmit Task"
+                        ? "Resubmit Task"
+                        : "Submit Task"}
                 </button>
               </div>
             </form>

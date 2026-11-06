@@ -7,6 +7,7 @@ import {
 } from 'react-icons/fi';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+import { formatDateTimeIST, toLocalInputValue, fromLocalInputValue } from '../../utils/dateTime';
 
 const TrainerTasks = () => {
   const [tasks, setTasks] = useState([]);
@@ -24,6 +25,11 @@ const TrainerTasks = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [reviewForm, setReviewForm] = useState({ status: '', marks: { obtained: 0, total: 100 }, reviewNotes: '' });
   const [reviewing, setReviewing] = useState(false);
+
+  // Deadline extension / submission reopening (per-student, audited)
+  const [extendModal, setExtendModal] = useState(null); // task id
+  const [extendForm, setExtendForm] = useState({ newDeadline: '', reason: '' });
+  const [extending, setExtending] = useState(false);
 
   useEffect(() => { fetchTasks(); }, []);
 
@@ -92,8 +98,38 @@ const TrainerTasks = () => {
 
   const statusColor = (s) => ({ pending: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', 'in-progress': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', late: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' }[s] || '');
   const priorityColor = (p) => ({ low: 'text-gray-500', medium: 'text-blue-500', high: 'text-orange-500', urgent: 'text-red-500' }[p] || '');
-  const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not set';
   const submissionStatusColor = (s) => ({ submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', approved: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', rejected: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', resubmission_requested: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' }[s] || '');
+
+  // Submission-window helpers (mirror the backend's authoritative rules).
+  const effectiveDeadline = (t) => t?.effectiveDueDate || t?.dueDate || null;
+  const isWindowClosed = (t) => Boolean(t?.isSubmissionClosed);
+  const deadlinePassed = (t) => { const d = effectiveDeadline(t); return d ? new Date(d) < new Date() : false; };
+  const canExtendDeadline = (t) => isWindowClosed(t) || deadlinePassed(t);
+
+  // Latest terminology for a submission (server-provided metadata driven)
+  const submissionLabel = (sub) => {
+    if (sub.status === 'submitted' && (sub.versions > 1 || sub.lastUpdatedAt)) return 'Updated - Awaiting Review';
+    if (sub.status === 'submitted' && sub.isLateSubmission) return 'Late Submission';
+    return sub.status.replace('_', ' ');
+  };
+
+  const openExtendModal = (t) => {
+    setExtendForm({ newDeadline: toLocalInputValue(effectiveDeadline(t)), reason: '' });
+    setExtendModal(t._id);
+  };
+
+  const handleExtendDeadline = async (e) => {
+    e.preventDefault(); setExtending(true);
+    try {
+      const { data } = await api.post(`/tasks/${extendModal}/extend-deadline`, { newDeadline: fromLocalInputValue(extendForm.newDeadline), reason: extendForm.reason });
+      toast.success(data?.message || 'Deadline extended');
+      setExtendModal(null);
+      fetchTasks();
+      if (selectedTask?._id === extendModal) openTaskDetail({ _id: extendModal });
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to extend deadline'); }
+    finally { setExtending(false); }
+  };
 
   const submission = taskDetail?.submission;
 
@@ -129,7 +165,11 @@ const TrainerTasks = () => {
                   <p className="text-sm text-dark-500 mt-1 line-clamp-2">{t.description}</p>
                   <div className="flex flex-wrap gap-3 mt-2 text-xs text-dark-400">
                     <span>Assigned to: <strong className="text-dark-600 dark:text-dark-300">{t.assignedTo?.name || 'N/A'}</strong></span>
-                    <span>Due: {formatDate(t.dueDate)}</span>
+                    <span>Due: {formatDate(effectiveDeadline(t))}</span>
+                    {t.isDeadlineExtended && <span className="font-medium text-orange-500">Extended</span>}
+                    {isWindowClosed(t)
+                      ? <span className="font-medium text-red-500">Submission Closed</span>
+                      : t.submissionClosesAt && <span>Closes: {formatDateTimeIST(t.submissionClosesAt)}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -183,8 +223,28 @@ const TrainerTasks = () => {
                       </div>
                       <div className="flex items-center gap-2 text-sm text-dark-500">
                         <FiCalendar size={14} className="text-dark-400" />
-                        <span>Due: {formatDate(taskDetail.task.dueDate)}</span>
+                        <span>Due: {formatDate(effectiveDeadline(taskDetail.task))}</span>
                       </div>
+                      {isWindowClosed(taskDetail.task) ? (
+                        <div className="flex items-center gap-2 text-sm">
+                          <FiAlertCircle size={14} className="text-red-500" />
+                          <span className="font-medium text-red-500">
+                            Submission Closed{taskDetail.task.submissionClosesAt ? ` (window: ${formatDateTimeIST(taskDetail.task.submissionClosesAt)})` : ''}
+                          </span>
+                        </div>
+                      ) : (
+                        taskDetail.task.submissionClosesAt && (
+                          <div className="flex items-center gap-2 text-sm text-dark-500">
+                            <FiClock size={14} className="text-dark-400" />
+                            <span>Closes: {formatDateTimeIST(taskDetail.task.submissionClosesAt)}</span>
+                          </div>
+                        )
+                      )}
+                      {taskDetail.task.isDeadlineExtended && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium text-orange-500">Deadline Extended / Reopened</span>
+                        </div>
+                      )}
                       {taskDetail.task.completedAt && (
                         <div className="flex items-center gap-2 text-sm text-dark-500">
                           <FiCheckCircle size={14} className="text-green-500" />
@@ -198,6 +258,15 @@ const TrainerTasks = () => {
                         </div>
                       )}
                     </div>
+
+                    {/* Extend Deadline / Reopen Submission Window */}
+                    {canExtendDeadline(taskDetail.task) && (
+                      <div className="flex justify-end mt-4">
+                        <button onClick={() => openExtendModal(taskDetail.task)} className="btn-outline text-sm flex items-center gap-2">
+                          <FiCalendar size={14} /> Extend Deadline / Reopen
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Student Response / Submission */}
@@ -217,8 +286,13 @@ const TrainerTasks = () => {
                       <div className="space-y-4">
                         {/* Submission status */}
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-dark-500">Submitted: {formatDate(submission.submittedDate || submission.createdAt)}</span>
-                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${submissionStatusColor(submission.status)}`}>{submission.status.replace('_', ' ')}</span>
+                          <span className="text-sm text-dark-500">
+                            Submitted: {formatDate(submission.submittedDate || submission.createdAt)}
+                            {submission.lastUpdatedAt && (
+                              <span className="ml-2 text-xs text-dark-400">(Updated: {formatDateTimeIST(submission.lastUpdatedAt)})</span>
+                            )}
+                          </span>
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${submissionStatusColor(submission.status)}`}>{submissionLabel(submission)}</span>
                         </div>
 
                         {/* GitHub Link */}
@@ -374,6 +448,26 @@ const TrainerTasks = () => {
               </div>
               <div><label className="label">Instructions</label><textarea value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })} className="input-field" rows={2} placeholder="Additional instructions..." /></div>
               <div className="flex justify-end gap-3 pt-4"><button type="button" onClick={() => setShowCreate(false)} className="btn-outline text-sm">Cancel</button><button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Creating...' : 'Create Task'}</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Extend Deadline / Reopen Submissions Modal */}
+      {extendModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setExtendModal(null)}>
+          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-dark-900 dark:text-white">Extend Deadline / Reopen</h2>
+              <button onClick={() => setExtendModal(null)}><FiX size={20} className="text-dark-400" /></button>
+            </div>
+            <p className="text-sm text-dark-500 mb-4">Sets a new effective deadline (future, later than the current one), reopens this student's submission window, resets the reminder cycle, and notifies the student by email and in-app. The original deadline stays preserved for history.</p>
+            <form onSubmit={handleExtendDeadline} className="space-y-4">
+              <div><label className="label">New Deadline *</label><input type="datetime-local" required value={extendForm.newDeadline} onChange={e => setExtendForm({ ...extendForm, newDeadline: e.target.value })} className="input-field" /></div>
+              <div><label className="label">Reason</label><textarea value={extendForm.reason} onChange={e => setExtendForm({ ...extendForm, reason: e.target.value })} className="input-field" rows={2} placeholder="Reason for extension (optional)" /></div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setExtendModal(null)} className="btn-outline text-sm">Cancel</button>
+                <button type="submit" disabled={extending} className="btn-primary text-sm">{extending ? 'Saving...' : 'Extend & Reopen'}</button>
+              </div>
             </form>
           </div>
         </div>
