@@ -56,9 +56,9 @@ const HomePage = () => {
                 </Link>
               </div>
               <div className="mt-10 flex items-center gap-8">
-                <div><p className="text-3xl font-bold text-dark-900 dark:text-white">{statStudents}</p><p className="text-sm text-dark-500">Students Placed</p></div>
+                <div><p className="text-3xl font-bold text-dark-900 dark:text-white">{statStudents}</p><p className="text-sm text-dark-500">Students Joined</p></div>
                 <div className="w-px h-12 bg-dark-200 dark:bg-dark-700"></div>
-                <div><p className="text-3xl font-bold text-dark-900 dark:text-white">{statTrainers}</p><p className="text-sm text-dark-500">Expert Trainers</p></div>
+                <div><p className="text-3xl font-bold text-dark-900 dark:text-white">{statTrainers}</p><p className="text-sm text-dark-500">Trainers</p></div>
                 <div className="w-px h-12 bg-dark-200 dark:bg-dark-700"></div>
                 <div><p className="text-3xl font-bold text-dark-900 dark:text-white">{statSuccessRate}</p><p className="text-sm text-dark-500">Success Rate</p></div>
               </div>
